@@ -29,15 +29,18 @@ class Model(object):
         nact = ac_space.n
         nbatch = nenvs*nsteps
 
-        A = tf.placeholder(tf.int32, [nbatch])
-        ADV = tf.placeholder(tf.float32, [nbatch])
-        R = tf.placeholder(tf.float32, [nbatch])
-        LR = tf.placeholder(tf.float32, [])
+        writter = tf.summary.FileWriter("/tmp/a2c_demo/1")
+
+
+        A = tf.placeholder(tf.int32, [nbatch]) # Comments by Fei: this must be the action
+        ADV = tf.placeholder(tf.float32, [nbatch]) # Comments by Fei: this must be the advantage 
+        R = tf.placeholder(tf.float32, [nbatch]) # Comments by Fei: this must be the reward
+        LR = tf.placeholder(tf.float32, []) # Comments by Fei: this must be the learning rate
 
         step_model = policy(sess, ob_space, ac_space, nenvs, 1, nstack, reuse=False)
         train_model = policy(sess, ob_space, ac_space, nenvs, nsteps, nstack, reuse=True)
 
-        neglogpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model.pi, labels=A)
+        neglogpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model.pi, labels=A) # Comments by Fei: pi is nbatch * nact
         pg_loss = tf.reduce_mean(ADV * neglogpac)
         vf_loss = tf.reduce_mean(mse(tf.squeeze(train_model.vf), R))
         entropy = tf.reduce_mean(cat_entropy(train_model.pi))
@@ -65,6 +68,7 @@ class Model(object):
                 [pg_loss, vf_loss, entropy, _train],
                 td_map
             )
+            writter.add_graph(sess.graph)
             return policy_loss, value_loss, policy_entropy
 
         def save(save_path):
@@ -97,8 +101,8 @@ class Runner(object):
         nh, nw, nc = env.observation_space.shape
         nenv = env.num_envs
         self.batch_ob_shape = (nenv*nsteps, nh, nw, nc*nstack)
-        self.obs = np.zeros((nenv, nh, nw, nc*nstack), dtype=np.uint8)
-        obs = env.reset()
+        self.obs = np.zeros((nenv, nh, nw, nc*nstack), dtype=np.uint8) # Comments by Fei: be aware, self.obs is only nenv!
+        obs = env.reset() # Comments by Fei: obs should only be nenv * nh * nw * 1???
         self.update_obs(obs)
         self.gamma = gamma
         self.nsteps = nsteps
@@ -115,31 +119,31 @@ class Runner(object):
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones = [],[],[],[],[]
         mb_states = self.states
         for n in range(self.nsteps):
-            actions, values, states = self.model.step(self.obs, self.states, self.dones)
-            mb_obs.append(np.copy(self.obs))
-            mb_actions.append(actions)
-            mb_values.append(values)
-            mb_dones.append(self.dones)
-            obs, rewards, dones, _ = self.env.step(actions)
+            actions, values, states = self.model.step(self.obs, self.states, self.dones) # Comments by Fei: step_model (nstep = 1)! nenv, nenv, nenv * 2nlstm
+            mb_obs.append(np.copy(self.obs)) # Comments by Fei: finally will be nsteps * nenv * nh * nw * (nc*nstack)
+            mb_actions.append(actions) # Comments by Fei: finally will be nsteps * nenv
+            mb_values.append(values) # Comments by Fei: finally will be nsteps * nenv
+            mb_dones.append(self.dones) 
+            obs, rewards, dones, _ = self.env.step(actions) # Comments by Fei: nenv * nh * nw * 1, nenv, nenv
             self.states = states
             self.dones = dones
             for n, done in enumerate(dones):
                 if done:
                     self.obs[n] = self.obs[n]*0
             self.update_obs(obs)
-            mb_rewards.append(rewards)
-        mb_dones.append(self.dones)
+            mb_rewards.append(rewards) # Comments by Fei: finally will be nsteps * nenv
+        mb_dones.append(self.dones) # Comments by Fei: finally will be (nsteps+1) * nenv
         #batch of steps to batch of rollouts
-        mb_obs = np.asarray(mb_obs, dtype=np.uint8).swapaxes(1, 0).reshape(self.batch_ob_shape)
-        mb_rewards = np.asarray(mb_rewards, dtype=np.float32).swapaxes(1, 0)
-        mb_actions = np.asarray(mb_actions, dtype=np.int32).swapaxes(1, 0)
-        mb_values = np.asarray(mb_values, dtype=np.float32).swapaxes(1, 0)
-        mb_dones = np.asarray(mb_dones, dtype=np.bool).swapaxes(1, 0)
-        mb_masks = mb_dones[:, :-1]
-        mb_dones = mb_dones[:, 1:]
-        last_values = self.model.value(self.obs, self.states, self.dones).tolist()
+        mb_obs = np.asarray(mb_obs, dtype=np.uint8).swapaxes(1, 0).reshape(self.batch_ob_shape) # Comments by Fei: (nenv*nsteps, nh, nw, nc*nstack)
+        mb_rewards = np.asarray(mb_rewards, dtype=np.float32).swapaxes(1, 0) # Comments by Fei: nenv * nsteps
+        mb_actions = np.asarray(mb_actions, dtype=np.int32).swapaxes(1, 0) # Comments by Fei: nenv * nsteps
+        mb_values = np.asarray(mb_values, dtype=np.float32).swapaxes(1, 0) # Comments by Fei: nenv * nsteps
+        mb_dones = np.asarray(mb_dones, dtype=np.bool).swapaxes(1, 0) # Comments by Fei: nenv * (nsteps+1)
+        mb_masks = mb_dones[:, :-1] # Comments by Fei: masks is nenv * nsteps (missing the last done)
+        mb_dones = mb_dones[:, 1:] # Comments by Fei: dones is nenv * nsteps (missing the first done)
+        last_values = self.model.value(self.obs, self.states, self.dones).tolist() # Comments by Fei: step_model (nstep = 1)! nenv vector
         #discount/bootstrap off value fn
-        for n, (rewards, dones, value) in enumerate(zip(mb_rewards, mb_dones, last_values)):
+        for n, (rewards, dones, value) in enumerate(zip(mb_rewards, mb_dones, last_values)): # Comments by Fei: nenv | nsteps, nsteps, 1
             rewards = rewards.tolist()
             dones = dones.tolist()
             if dones[-1] == 0:
@@ -147,10 +151,10 @@ class Runner(object):
             else:
                 rewards = discount_with_dones(rewards, dones, self.gamma)
             mb_rewards[n] = rewards
-        mb_rewards = mb_rewards.flatten()
-        mb_actions = mb_actions.flatten()
-        mb_values = mb_values.flatten()
-        mb_masks = mb_masks.flatten()
+        mb_rewards = mb_rewards.flatten() # Comments by Fei: nbatch vector now
+        mb_actions = mb_actions.flatten()# Comments by Fei: nbatch vector now
+        mb_values = mb_values.flatten()# Comments by Fei: nbatch vector now
+        mb_masks = mb_masks.flatten()# Comments by Fei: nbatch vector now
         return mb_obs, mb_states, mb_rewards, mb_masks, mb_actions, mb_values
 
 def learn(policy, env, seed, nsteps=5, nstack=4, total_timesteps=int(80e6), vf_coef=0.5, ent_coef=0.01, max_grad_norm=0.5, lr=7e-4, lrschedule='linear', epsilon=1e-5, alpha=0.99, gamma=0.99, log_interval=100):
@@ -168,7 +172,7 @@ def learn(policy, env, seed, nsteps=5, nstack=4, total_timesteps=int(80e6), vf_c
     nbatch = nenvs*nsteps
     tstart = time.time()
     for update in range(1, total_timesteps//nbatch+1):
-        obs, states, rewards, masks, actions, values = runner.run()
+        obs, states, rewards, masks, actions, values = runner.run() # Comments by Fei: (nenv*nsteps, nh, nw, nc*nstack), (nenv, nlstm*2), nbatch, nbatch, nbatch, nbatch
         policy_loss, value_loss, policy_entropy = model.train(obs, states, rewards, masks, actions, values)
         nseconds = time.time()-tstart
         fps = int((update*nbatch)/nseconds)

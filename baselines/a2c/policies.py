@@ -20,15 +20,15 @@ class LnLstmPolicy(object):
             h3 = conv(h2, 'c3', nf=64, rf=3, stride=1, init_scale=np.sqrt(2))
             h3 = conv_to_fc(h3)
             h4 = fc(h3, 'fc1', nh=512, init_scale=np.sqrt(2))
-            xs = batch_to_seq(h4, nenv, nsteps)
-            ms = batch_to_seq(M, nenv, nsteps)
-            h5, snew = lnlstm(xs, ms, S, 'lstm1', nh=nlstm)
-            h5 = seq_to_batch(h5)
-            pi = fc(h5, 'pi', nact, act=lambda x:x)
-            vf = fc(h5, 'v', 1, act=lambda x:x)
+            xs = batch_to_seq(h4, nenv, nsteps) # Comments by Fei: xs is list of nsteps, each is nenv * nh
+            ms = batch_to_seq(M, nenv, nsteps) # Comments by Fei: ms is list of nsteps, each is nenv vector
+            h5, snew = lnlstm(xs, ms, S, 'lstm1', nh=nlstm) # Comment by Fei: h5 is the same dimension as xs, but with value changed by LSTM. snew is new S
+            h5 = seq_to_batch(h5) # Comments by Fei: h5 is nbatch * nh again, just like h4
+            pi = fc(h5, 'pi', nact, act=lambda x:x) # Comments by Fei: pi is nbatch * nact
+            vf = fc(h5, 'v', 1, act=lambda x:x) # Comments by Fei: vf is nbatch * 1
 
-        v0 = vf[:, 0]
-        a0 = sample(pi)
+        v0 = vf[:, 0] # Comments by Fei: v0 is nbatch vector, each value is the value function of a state
+        a0 = sample(pi) # Comments by Fei: a0 is nbatch vector, each value is the best choice of action, at that state
         self.initial_state = np.zeros((nenv, nlstm*2), dtype=np.float32)
 
         def step(ob, state, mask):

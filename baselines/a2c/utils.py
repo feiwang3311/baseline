@@ -97,14 +97,14 @@ def lstm(xs, ms, s, scope, nh, init_scale=1.0):
     s = tf.concat(axis=1, values=[c, h])
     return xs, s
 
-def _ln(x, g, b, e=1e-5, axes=[1]):
-    u, s = tf.nn.moments(x, axes=axes, keep_dims=True)
-    x = (x-u)/tf.sqrt(s+e)
-    x = x*g+b
+def _ln(x, g, b, e=1e-5, axes=[1]): # Comments by Fei: In total, this function does re-centering and re-scaling
+    u, s = tf.nn.moments(x, axes=axes, keep_dims=True) # Comments by Fei: u and s are mean and variance, each size nenv vector
+    x = (x-u)/tf.sqrt(s+e) # Comments by Fei: this is just normalization
+    x = x*g+b # operations here must be element wise with broadcast on dim 0, which is re-centering and re-scaling
     return x
 
 def lnlstm(xs, ms, s, scope, nh, init_scale=1.0):
-    nbatch, nin = [v.value for v in xs[0].get_shape()]
+    nbatch, nin = [v.value for v in xs[0].get_shape()] # Comments by Fei: nbatch = nenv, nin = 512, nh = nlstm
     nsteps = len(xs)
     with tf.variable_scope(scope):
         wx = tf.get_variable("wx", [nin, nh*4], initializer=ortho_init(init_scale))
@@ -120,20 +120,20 @@ def lnlstm(xs, ms, s, scope, nh, init_scale=1.0):
         gc = tf.get_variable("gc", [nh], initializer=tf.constant_initializer(1.0))
         bc = tf.get_variable("bc", [nh], initializer=tf.constant_initializer(0.0))
 
-    c, h = tf.split(axis=1, num_or_size_splits=2, value=s)
-    for idx, (x, m) in enumerate(zip(xs, ms)):
-        c = c*(1-m)
+    c, h = tf.split(axis=1, num_or_size_splits=2, value=s) # Comments by Fei: c h are both nenv * nlstm
+    for idx, (x, m) in enumerate(zip(xs, ms)): # Comments by Fei: xs is list of nstep, each value nenv * 512, ms is list of nstep, each value (nenv)
+        c = c*(1-m) # Comments by Fei: so x is nenv * 512(nin), m is nenv vector, not sure but this has to be broadcast + element_wise 
         h = h*(1-m)
-        z = _ln(tf.matmul(x, wx), gx, bx) + _ln(tf.matmul(h, wh), gh, bh) + b
-        i, f, o, u = tf.split(axis=1, num_or_size_splits=4, value=z)
+        z = _ln(tf.matmul(x, wx), gx, bx) + _ln(tf.matmul(h, wh), gh, bh) + b # Comments by Fei: z is nenv by 4*nlstm
+        i, f, o, u = tf.split(axis=1, num_or_size_splits=4, value=z) # Comments by Fei, then z is split into 4 gates, each nenv * nlstm
         i = tf.nn.sigmoid(i)
         f = tf.nn.sigmoid(f)
         o = tf.nn.sigmoid(o)
         u = tf.tanh(u)
-        c = f*c + i*u
-        h = o*tf.tanh(_ln(c, gc, bc))
-        xs[idx] = h
-    s = tf.concat(axis=1, values=[c, h])
+        c = f*c + i*u # Comments by Fei: gated operation of the next c (this is the flow through state of LSTM)
+        h = o*tf.tanh(_ln(c, gc, bc)) # Comments by Fei: gated operation of the next h (this is the output state of LSTM)
+        xs[idx] = h # Comments by Fei: xs accumuates all output states for return
+    s = tf.concat(axis=1, values=[c, h]) # Comments by Fei: this is the final LSTM states (both flow through and output)
     return xs, s
 
 def conv_to_fc(x):
