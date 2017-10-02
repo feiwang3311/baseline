@@ -95,9 +95,10 @@ class CnnPolicy(object):
         nh, nw, nc = ob_space.shape
         ob_shape = (nbatch, nh, nw, nc*nstack)
         nact = ac_space.n
-        X = tf.placeholder(tf.uint8, ob_shape) #obs
+        X = tf.placeholder(tf.int8, ob_shape) #obs Change for SAT: SAT input is of type int8!
         with tf.variable_scope("model", reuse=reuse):
-            h = conv(tf.cast(X, tf.float32)/255., 'c1', nf=32, rf=8, stride=4, init_scale=np.sqrt(2))
+            h = conv(tf.cast(X, tf.float32), 'c1', nf=32, rf=8, stride=1, init_scale=np.sqrt(2)) # Change for SAT, don't divide input by 255.
+            # h = conv(tf.cast(X, tf.float32)/255., 'c1', nf=32, rf=8, stride=4, init_scale=np.sqrt(2)) # Change for SAT, don't divide input by 255.
             h2 = conv(h, 'c2', nf=64, rf=4, stride=2, init_scale=np.sqrt(2))
             h3 = conv(h2, 'c3', nf=64, rf=3, stride=1, init_scale=np.sqrt(2))
             h3 = conv_to_fc(h3)

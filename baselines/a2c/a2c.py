@@ -29,7 +29,7 @@ class Model(object):
         nact = ac_space.n
         nbatch = nenvs*nsteps
 
-        writter = tf.summary.FileWriter("/tmp/a2c_demo/1")
+        writter = tf.summary.FileWriter("/tmp/a2c_demo/1") # Change for SAT: this is to use tensorBoard
 
 
         A = tf.placeholder(tf.int32, [nbatch]) # Comments by Fei: this must be the action
@@ -68,7 +68,7 @@ class Model(object):
                 [pg_loss, vf_loss, entropy, _train],
                 td_map
             )
-            writter.add_graph(sess.graph)
+            # writter.add_graph(sess.graph)
             return policy_loss, value_loss, policy_entropy
 
         def save(save_path):
@@ -101,8 +101,8 @@ class Runner(object):
         nh, nw, nc = env.observation_space.shape
         nenv = env.num_envs
         self.batch_ob_shape = (nenv*nsteps, nh, nw, nc*nstack)
-        self.obs = np.zeros((nenv, nh, nw, nc*nstack), dtype=np.uint8) # Comments by Fei: be aware, self.obs is only nenv!
-        obs = env.reset() # Comments by Fei: obs should only be nenv * nh * nw * 1???
+        self.obs = np.zeros((nenv, nh, nw, nc*nstack), dtype=np.int8) # Comments by Fei: be aware, self.obs is only nenv! Changes for SAT: use int8 (not uint8)
+        obs = env.reset() # Comments by Fei: obs should only be nenv * nh * nw * 1. State may contain several obs in a roll, by nstack.
         self.update_obs(obs)
         self.gamma = gamma
         self.nsteps = nsteps
@@ -113,7 +113,8 @@ class Runner(object):
         # Do frame-stacking here instead of the FrameStack wrapper to reduce
         # IPC overhead
         self.obs = np.roll(self.obs, shift=-1, axis=3)
-        self.obs[:, :, :, -1] = obs[:, :, :, 0]
+        self.obs[:, :, :, -1] = obs
+        # self.obs[:, :, :, -1] = obs[:, :, :, 0] Change for SAT
 
     def run(self):
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones = [],[],[],[],[]
@@ -157,7 +158,30 @@ class Runner(object):
         mb_masks = mb_masks.flatten()# Comments by Fei: nbatch vector now
         return mb_obs, mb_states, mb_rewards, mb_masks, mb_actions, mb_values
 
-def learn(policy, env, seed, nsteps=5, nstack=4, total_timesteps=int(80e6), vf_coef=0.5, ent_coef=0.01, max_grad_norm=0.5, lr=7e-4, lrschedule='linear', epsilon=1e-5, alpha=0.99, gamma=0.99, log_interval=100):
+    """
+        this function play the game of SAT and return the performance (Added by Fei)
+    """
+    def play(self, decision = 'play'):
+        obs = self.env.reset()
+        states = self.model.initial_state
+        nenv = self.env.num_envs
+        dones = [False for _ in range(nenv)]
+        mask = np.asarray([1.0 for _ in range(nenv)])
+        sum_rewards = np.zeros(nenv)
+        for n in range(self.nsteps * 10):
+            if decision == 'play':
+                actions, values, states = self.model.step(np.expand_dims(obs, 3), states, dones)
+            else: 
+                actions = [-1 for _ in range(nenv)] # use -1 as inidcation of default choice by SAT solver
+            obs, rewards, dones, _ = self.env.step(actions)
+            # for those environments that have not be done once, accumulate scores
+            mask[np.asarray(dones)] = 0.0
+            sum_rewards = sum_rewards + np.asarray(rewards) * mask
+            if not mask.any(): break
+        return np.mean(sum_rewards)
+
+# Change for SAT, nstack changed to 1 (was 4)
+def learn(policy, env, seed, nsteps=5, nstack=1, total_timesteps=int(80e6), vf_coef=0.5, ent_coef=0.01, max_grad_norm=0.5, lr=7e-4, lrschedule='linear', epsilon=1e-5, alpha=0.99, gamma=0.99, log_interval=100):
     tf.reset_default_graph()
     set_global_seeds(seed)
 
@@ -184,6 +208,8 @@ def learn(policy, env, seed, nsteps=5, nstack=4, total_timesteps=int(80e6), vf_c
             logger.record_tabular("policy_entropy", float(policy_entropy))
             logger.record_tabular("value_loss", float(value_loss))
             logger.record_tabular("explained_variance", float(ev))
+            #logger.record_tabular("play performance", float(runner.play()))
+            #logger.record_tabular("default performance", float(runner.play(decision = "minisat")))
             logger.dump_tabular()
     env.close()
 
