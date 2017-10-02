@@ -29,7 +29,7 @@ class Model(object):
         nact = ac_space.n
         nbatch = nenvs*nsteps
 
-        writter = tf.summary.FileWriter("/tmp/a2c_demo/1")
+        writter = tf.summary.FileWriter("/tmp/a2c_demo/1") # Change for SAT: this is to use tensorBoard
 
 
         A = tf.placeholder(tf.int32, [nbatch]) # Comments by Fei: this must be the action
@@ -68,12 +68,12 @@ class Model(object):
                 [pg_loss, vf_loss, entropy, _train],
                 td_map
             )
-            writter.add_graph(sess.graph)
+            # writter.add_graph(sess.graph)
             return policy_loss, value_loss, policy_entropy
 
         def save(save_path):
             ps = sess.run(params)
-            make_path(save_path)
+            # make_path(save_path) Comments by Fei: this seems to be a bug. joblib.dump cannot write to directory, but make_path made "save_path" a dir
             joblib.dump(ps, save_path)
 
         def load(load_path):
@@ -83,6 +83,68 @@ class Model(object):
                 restores.append(p.assign(loaded_p))
             ps = sess.run(restores)
 
+        """
+            Fei adds function: supervised training
+        """
+        def super_train():
+            # "training is the filename taht we preprocessed our training data"
+            filename = "training"
+            print("read files from snaps, temporally save it in %s" % (filename))
+            from preprocess import data_shuffler
+            data = data_shuffler(filename)
+            [num_train, Xlen] = data.train["trainX"].shape
+            num_var = int(data.max_var)
+            num_clause = int(data.max_clause)
+            # X is Xlen array (which needs reshape before training), Y is nact array
+            y_ = tf.placeholder(tf.float32, shape = [None, 2 * num_var], name = "labels")
+            # Train and evaluate
+            with tf.name_scope("loss"):
+                cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels = y_, logits = self.train_model.pi))
+            with tf.name_scope("train"):
+                train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
+            with tf.name_scope("accuracy"):
+                correct_prediction = tf.equal(tf.argmax(self.train_model.pi, 1), tf.argmax(y_, 1))
+                accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+            # also need to supervisely train the step_model network
+            with tf.name_scope("loss_step"):
+                cross_entropy_step = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels = y_, logits = self.step_model.pi))
+            with tf.name_scope("train_step"):
+                train_step_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy_step)
+            with tf.name_scope("accuracy_step"):
+                correct_prediction_step = tf.equal(tf.argmax(self.step_model.pi, 1), tf.argmax(y_, 1))
+                accuracy_step = tf.reduce_mean(tf.cast(correct_prediction_step, tf.float32))
+            
+            sess.run(tf.global_variables_initializer())
+            # supervised training cycle for step_model
+            for i in range(2001):
+                batch = data.next_batch(nenvs)
+                x_reshape = np.reshape(batch[0], [-1, num_clause, num_var, 1])
+                feed_dict = {step_model.X: x_reshape, y_: batch[1]}
+                if i % 500 == 0:
+                    train_accuracy = sess.run(accuracy_step, feed_dict)
+                    print('step %d, training accuracy %g' % (i, train_accuracy))
+                sess.run(train_step_step, feed_dict)
+            # supervised testing cycle
+            test_x_reshape = np.reshape(data.test["testX"], [-1, num_clause, num_var, 1])
+            num_round_step = round(test_x_reshape.shape[0] / nenvs) - 1
+            for i in range(num_round_step):
+                feed_dict = {step_model.X: test_x_reshape[i * nenvs: (i+1)*nenvs], y_: data.test["testY"][i*nenvs: (i+1)*nenvs]}
+                print('test accuracy %g' % sess.run(accuracy_step, feed_dict))
+            # supervised training cycle
+            for i in range(201):
+                batch = data.next_batch(nbatch) # TODO: need np reshape, not tf reshape
+                x_reshape = np.reshape(batch[0], [-1, num_clause, num_var, 1])
+                feed_dict={train_model.X: x_reshape, y_: batch[1]}
+                if i % 100 == 0:                     
+                    train_accuracy = sess.run(accuracy, feed_dict)
+                    print('step %d, training accuracy %g' % (i, train_accuracy))
+                sess.run(train_step, feed_dict)
+            # supervised testing cycle
+            num_round = round(test_x_reshape.shape[0] / nbatch) - 1
+            for i in range(num_round):
+                feed_dict = {train_model.X: test_x_reshape[i*nbatch:(i+1)*nbatch], y_: data.test["testY"][i*nbatch:(i+1)*nbatch]}
+                print('test accuracy %g' % sess.run(accuracy, feed_dict))
+
         self.train = train
         self.train_model = train_model
         self.step_model = step_model
@@ -91,6 +153,7 @@ class Model(object):
         self.initial_state = step_model.initial_state
         self.save = save
         self.load = load
+        self.super_train = super_train
         tf.global_variables_initializer().run(session=sess)
 
 class Runner(object):
@@ -101,8 +164,8 @@ class Runner(object):
         nh, nw, nc = env.observation_space.shape
         nenv = env.num_envs
         self.batch_ob_shape = (nenv*nsteps, nh, nw, nc*nstack)
-        self.obs = np.zeros((nenv, nh, nw, nc*nstack), dtype=np.uint8) # Comments by Fei: be aware, self.obs is only nenv!
-        obs = env.reset() # Comments by Fei: obs should only be nenv * nh * nw * 1???
+        self.obs = np.zeros((nenv, nh, nw, nc*nstack), dtype=np.int8) # Comments by Fei: be aware, self.obs is only nenv! Changes for SAT: use int8 (not uint8)
+        obs = env.reset() # Comments by Fei: obs should only be nenv * nh * nw * 1. State may contain several obs in a roll, by nstack.
         self.update_obs(obs)
         self.gamma = gamma
         self.nsteps = nsteps
@@ -113,7 +176,8 @@ class Runner(object):
         # Do frame-stacking here instead of the FrameStack wrapper to reduce
         # IPC overhead
         self.obs = np.roll(self.obs, shift=-1, axis=3)
-        self.obs[:, :, :, -1] = obs[:, :, :, 0]
+        self.obs[:, :, :, -1] = obs
+        # self.obs[:, :, :, -1] = obs[:, :, :, 0] Change for SAT
 
     def run(self):
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones = [],[],[],[],[]
@@ -157,7 +221,30 @@ class Runner(object):
         mb_masks = mb_masks.flatten()# Comments by Fei: nbatch vector now
         return mb_obs, mb_states, mb_rewards, mb_masks, mb_actions, mb_values
 
-def learn(policy, env, seed, nsteps=5, nstack=4, total_timesteps=int(80e6), vf_coef=0.5, ent_coef=0.01, max_grad_norm=0.5, lr=7e-4, lrschedule='linear', epsilon=1e-5, alpha=0.99, gamma=0.99, log_interval=100):
+    """
+        this function play the game of SAT and return the performance (Added by Fei)
+    """
+    def play(self, decision = 'play'):
+        obs = self.env.reset()
+        states = self.model.initial_state
+        nenv = self.env.num_envs
+        dones = [False for _ in range(nenv)]
+        mask = np.asarray([1.0 for _ in range(nenv)])
+        sum_rewards = np.zeros(nenv)
+        for n in range(self.nsteps * 10):
+            if decision == 'play':
+                actions, values, states = self.model.step(np.expand_dims(obs, 3), states, dones)
+            else: 
+                actions = [-1 for _ in range(nenv)] # use -1 as inidcation of default choice by SAT solver
+            obs, rewards, dones, _ = self.env.step(actions)
+            # for those environments that have not be done once, accumulate scores
+            mask[np.asarray(dones)] = 0.0
+            sum_rewards = sum_rewards + np.asarray(rewards) * mask
+            if not mask.any(): break
+        return np.mean(sum_rewards)
+
+# Change for SAT, nstack changed to 1 (was 4), nsteps changed to 20, was 5
+def learn(policy, env, seed, nsteps=20, nstack=1, total_timesteps=int(80e6), vf_coef=0.5, ent_coef=0.01, max_grad_norm=0.5, lr=7e-4, lrschedule='linear', epsilon=1e-5, alpha=0.99, gamma=0.99, log_interval=100):
     tf.reset_default_graph()
     set_global_seeds(seed)
 
@@ -168,6 +255,9 @@ def learn(policy, env, seed, nsteps=5, nstack=4, total_timesteps=int(80e6), vf_c
     model = Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nenvs=nenvs, nsteps=nsteps, nstack=nstack, num_procs=num_procs, ent_coef=ent_coef, vf_coef=vf_coef,
         max_grad_norm=max_grad_norm, lr=lr, alpha=alpha, epsilon=epsilon, total_timesteps=total_timesteps, lrschedule=lrschedule)
     runner = Runner(env, model, nsteps=nsteps, nstack=nstack, gamma=gamma)
+
+    # add supervised learning here:
+    # model.super_train()
 
     nbatch = nenvs*nsteps
     tstart = time.time()
@@ -184,7 +274,10 @@ def learn(policy, env, seed, nsteps=5, nstack=4, total_timesteps=int(80e6), vf_c
             logger.record_tabular("policy_entropy", float(policy_entropy))
             logger.record_tabular("value_loss", float(value_loss))
             logger.record_tabular("explained_variance", float(ev))
+            #logger.record_tabular("play performance", float(runner.play()))
+            #logger.record_tabular("default performance", float(runner.play(decision = "minisat")))
             logger.dump_tabular()
+            model.save("params" + str(update // log_interval // 10))
     env.close()
 
 if __name__ == '__main__':
