@@ -1,7 +1,7 @@
 import os.path as osp
 import gym
 import time
-import joblib
+import pickle
 import logging
 import numpy as np
 import tensorflow as tf
@@ -74,10 +74,12 @@ class Model(object):
         def save(save_path):
             ps = sess.run(params)
             # make_path(save_path) Comments by Fei: this seems to be a bug. joblib.dump cannot write to directory, but make_path made "save_path" a dir
-            joblib.dump(ps, save_path)
+            with open(save_path, "wb") as file:
+                pickle.dump(ps, file)
 
         def load(load_path):
-            loaded_params = joblib.load(load_path)
+            with open(load_path, "rb") as file:
+                loaded_params = pickle.load(file)
             restores = []
             for p, loaded_p in zip(params, loaded_params):
                 restores.append(p.assign(loaded_p))
@@ -258,6 +260,7 @@ def learn(policy, env, seed, nsteps=20, nstack=1, total_timesteps=int(80e6), vf_
 
     # add supervised learning here:
     # model.super_train()
+    model.load("params_pickle/params0")
 
     nbatch = nenvs*nsteps
     tstart = time.time()
@@ -277,7 +280,7 @@ def learn(policy, env, seed, nsteps=20, nstack=1, total_timesteps=int(80e6), vf_
             #logger.record_tabular("play performance", float(runner.play()))
             #logger.record_tabular("default performance", float(runner.play(decision = "minisat")))
             logger.dump_tabular()
-            model.save("params" + str(update // log_interval // 10))
+            model.save("params_pickle/params" + str(update // log_interval // 10))
     env.close()
 
 if __name__ == '__main__':
