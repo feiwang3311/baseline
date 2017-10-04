@@ -38,7 +38,7 @@ class Model(object):
         LR = tf.placeholder(tf.float32, []) # Comments by Fei: this must be the learning rate
 
         step_model = policy(sess, ob_space, ac_space, nenvs, 1, nstack, reuse=False)
-        train_model = policy(sess, ob_space, ac_space, nenvs, nsteps, nstack, reuse=True)
+        train_model = policy(sess, ob_space, ac_space, nenvs, nsteps, nstack, reuse=True) # there is only one set of neural network, because reuse=True
 
         neglogpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model.pi, labels=A) # Comments by Fei: pi is nbatch * nact
         pg_loss = tf.reduce_mean(ADV * neglogpac)
@@ -117,21 +117,6 @@ class Model(object):
                 accuracy_step = tf.reduce_mean(tf.cast(correct_prediction_step, tf.float32))
             
             sess.run(tf.global_variables_initializer())
-            # supervised training cycle for step_model
-            for i in range(2001):
-                batch = data.next_batch(nenvs)
-                x_reshape = np.reshape(batch[0], [-1, num_clause, num_var, 1])
-                feed_dict = {step_model.X: x_reshape, y_: batch[1]}
-                if i % 500 == 0:
-                    train_accuracy = sess.run(accuracy_step, feed_dict)
-                    print('step %d, training accuracy %g' % (i, train_accuracy))
-                sess.run(train_step_step, feed_dict)
-            # supervised testing cycle
-            test_x_reshape = np.reshape(data.test["testX"], [-1, num_clause, num_var, 1])
-            num_round_step = round(test_x_reshape.shape[0] / nenvs) - 1
-            for i in range(num_round_step):
-                feed_dict = {step_model.X: test_x_reshape[i * nenvs: (i+1)*nenvs], y_: data.test["testY"][i*nenvs: (i+1)*nenvs]}
-                print('test accuracy %g' % sess.run(accuracy_step, feed_dict))
             # supervised training cycle
             for i in range(201):
                 batch = data.next_batch(nbatch) # TODO: need np reshape, not tf reshape
@@ -281,7 +266,8 @@ def learn(policy, env, seed, nsteps=20, nstack=1, total_timesteps=int(80e6), vf_
                 #logger.record_tabular("play performance", float(runner.play()))
                 #logger.record_tabular("default performance", float(runner.play(decision = "minisat")))
                 logger.dump_tabular()
-        model.save("params_pickle/big_params" + str(big_step))
+            if update % (log_interval * 10) == 0:
+                model.save("params_pickle/big_params" + str(big_step))
     env.close()
 
 if __name__ == '__main__':
