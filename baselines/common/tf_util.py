@@ -171,6 +171,23 @@ class Uint8Input(PlacholderTfInput):
     def get(self):
         return self._output
 
+# Comments by Fei: add this class for Int8
+class Int8Input(PlacholderTfInput):
+    def __init__(self, shape, name=None):
+        """Takes input in np.int8 format which is cast to float32 before passing it to the model
+        On GPU this ensures lower data transfer times.
+
+        Parameters
+        ----------
+        shape: [int] shape of the tensor
+        name: str name of the underlying placeholder
+        """
+        super().__init__(tf.placeholder(tf.int8, [None] + list(shape), name=name))
+        self._shape = shape
+        self._output = tf.cast(super().get(), tf.float32)
+
+    def get(self):
+        return self._output
 
 def ensure_tf_input(thing):
     """Takes either tf.placeholder of TfInput and outputs equivalent TfInput"""

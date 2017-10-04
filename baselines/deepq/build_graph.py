@@ -139,7 +139,7 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
     Returns
     -------
     act: (tf.Variable, bool, float) -> tf.Variable
-        function to select and action given observation.
+        function to select an action given observation.
 `       See the top of the file for details.
     """
     with tf.variable_scope(scope, reuse=reuse):
@@ -196,7 +196,7 @@ def build_act_with_param_noise(make_obs_ph, q_func, num_actions, scope="deepq", 
     Returns
     -------
     act: (tf.Variable, bool, float, bool, float, bool) -> tf.Variable
-        function to select and action given observation.
+        function to select an action given observation.
 `       See the top of the file for details.
     """
     if param_noise_filter_func is None:
@@ -323,7 +323,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
     Returns
     -------
     act: (tf.Variable, bool, float) -> tf.Variable
-        function to select and action given observation.
+        function to select an action given observation.
 `       See the top of the file for details.
     train: (object, np.array, np.array, object, np.array, np.array) -> np.array
         optimize the error in Bellman's equation.
@@ -363,7 +363,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         # compute estimate of best possible value starting from state at t + 1
         if double_q:
             q_tp1_using_online_net = q_func(obs_tp1_input.get(), num_actions, scope="q_func", reuse=True)
-            q_tp1_best_using_online_net = tf.arg_max(q_tp1_using_online_net, 1)
+            q_tp1_best_using_online_net = tf.argmax(q_tp1_using_online_net, 1)
             q_tp1_best = tf.reduce_sum(q_tp1 * tf.one_hot(q_tp1_best_using_online_net, num_actions), 1)
         else:
             q_tp1_best = tf.reduce_max(q_tp1, 1)

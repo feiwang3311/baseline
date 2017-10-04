@@ -163,8 +163,8 @@ class Runner(object):
         # Do frame-stacking here instead of the FrameStack wrapper to reduce
         # IPC overhead
         self.obs = np.roll(self.obs, shift=-1, axis=3)
-        self.obs[:, :, :, -1] = obs
-        # self.obs[:, :, :, -1] = obs[:, :, :, 0] Change for SAT
+        # self.obs[:, :, :, -1] = obs # 
+        self.obs[:, :, :, -1] = obs[:, :, :, 0] 
 
     def run(self):
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones = [],[],[],[],[]
@@ -245,11 +245,11 @@ def learn(policy, env, seed, nsteps=20, nstack=1, total_timesteps=int(80e6), vf_
 
     # add supervised learning here:
     # model.super_train()
-    model.load("params_pickle/params6")
+    model.load("params_pickle/params0")
 
     nbatch = nenvs*nsteps
     tstart = time.time()
-    for big_step in range(1, 101):
+    for big_step in range(1, 10):
         for update in range(1, total_timesteps//nbatch+1):
             obs, states, rewards, masks, actions, values = runner.run() # Comments by Fei: (nenv*nsteps, nh, nw, nc*nstack), (nenv, nlstm*2), nbatch, nbatch, nbatch, nbatch
             policy_loss, value_loss, policy_entropy = model.train(obs, states, rewards, masks, actions, values)

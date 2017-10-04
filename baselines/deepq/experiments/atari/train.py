@@ -26,13 +26,13 @@ from baselines.common.schedules import LinearSchedule, PiecewiseSchedule
 # copy over LazyFrames
 from baselines.common.atari_wrappers_deprecated import wrap_dqn
 from baselines.common.azure_utils import Container
-from .model import model, dueling_model
+from baselines.deepq.experiments.atari.model import model, dueling_model
 
 
 def parse_args():
     parser = argparse.ArgumentParser("DQN experiments for Atari games")
     # Environment
-    parser.add_argument("--env", type=str, default="Pong", help="name of the game")
+    parser.add_argument("--env", type=str, default="gym_sat_Env-v0", help="name of the game")
     parser.add_argument("--seed", type=int, default=42, help="which seed to use")
     # Core DQN parameters
     parser.add_argument("--replay-buffer-size", type=int, default=int(1e6), help="replay buffer size")
@@ -54,19 +54,21 @@ def parse_args():
     parser.add_argument("--prioritized-beta0", type=float, default=0.4, help="initial value of beta parameters for prioritized replay")
     parser.add_argument("--prioritized-eps", type=float, default=1e-6, help="eps parameter for prioritized replay buffer")
     # Checkpointing
-    parser.add_argument("--save-dir", type=str, default=None, help="directory in which training state and model should be saved.")
+    parser.add_argument("--save-dir", type=str, default="./temp_save", help="directory in which training state and model should be saved.")
     parser.add_argument("--save-azure-container", type=str, default=None,
                         help="It present data will saved/loaded from Azure. Should be in format ACCOUNT_NAME:ACCOUNT_KEY:CONTAINER")
-    parser.add_argument("--save-freq", type=int, default=1e6, help="save model once every time this many iterations are completed")
+    parser.add_argument("--save-freq", type=int, default=1e4, help="save model once every time this many iterations are completed")
     boolean_flag(parser, "load-on-start", default=True, help="if true and model was previously saved then training will be resumed")
     return parser.parse_args()
 
 
 def make_env(game_name):
-    env = gym.make(game_name + "NoFrameskip-v4")
+    # env = gym.make(game_name + "NoFrameskip-v4")
+    env = gym.make(game_name)
     monitored_env = SimpleMonitor(env)  # puts rewards and number of steps in info, before environment is wrapped
-    env = wrap_dqn(monitored_env)  # applies a bunch of modification to simplify the observation space (downsample, make b/w)
-    return env, monitored_env
+    # env = wrap_dqn(monitored_env)  # applies a bunch of modification to simplify the observation space (downsample, make b/w)
+    # Comments by Fei: not needed for sat
+    return monitored_env, monitored_env
 
 
 def maybe_save_model(savedir, container, state):
@@ -74,7 +76,7 @@ def maybe_save_model(savedir, container, state):
     if savedir is None:
         return
     start_time = time.time()
-    model_dir = "model-{}".format(state["num_iters"])
+    model_dir = "model-{}".format(state["num_iters"] // 1e7) # Comments by Fei: do some thing to make the name not so different (don't want to save too many models)
     U.save_state(os.path.join(savedir, model_dir, "saved"))
     if container is not None:
         container.put(os.path.join(savedir, model_dir), model_dir)
@@ -100,7 +102,7 @@ def maybe_load_model(savedir, container):
         found_model = os.path.exists(state_path)
     if found_model:
         state = pickle_load(state_path, compression=True)
-        model_dir = "model-{}".format(state["num_iters"])
+        model_dir = "model-{}".format(state["num_iters"] // 1e7) # Comments by Fei: for whatever change in maybe_save_model, reflect it here!
         if container is not None:
             container.get(savedir, model_dir)
         U.load_state(os.path.join(savedir, model_dir, "saved"))
@@ -128,6 +130,7 @@ if __name__ == '__main__':
         container = None
     # Create and seed the env.
     env, monitored_env = make_env(args.env)
+
     if args.seed > 0:
         set_global_seeds(args.seed)
         env.unwrapped.seed(args.seed)
@@ -145,7 +148,8 @@ if __name__ == '__main__':
             actual_model = dueling_model if args.dueling else model
             return actual_model(img_in, num_actions, scope, layer_norm=args.layer_norm, **kwargs)
         act, train, update_target, debug = deepq.build_train(
-            make_obs_ph=lambda name: U.Uint8Input(env.observation_space.shape, name=name),
+            # make_obs_ph=lambda name: U.Uint8Input(env.observation_space.shape, name=name),
+            make_obs_ph=lambda name: U.Int8Input(env.observation_space.shape, name=name), # Change for sat env
             q_func=model_wrapper,
             num_actions=env.action_space.n,
             optimizer=tf.train.AdamOptimizer(learning_rate=args.lr, epsilon=1e-4),
@@ -251,11 +255,7 @@ if __name__ == '__main__':
                     'num_iters': num_iters,
                     'monitor_state': monitored_env.get_state(),
                 })
-
-            if info["steps"] > args.num_steps:
-                break
-
-            if done:
+                # Comments by Fei: tabular log only for each save
                 steps_left = args.num_steps - info["steps"]
                 completion = np.round(info["steps"] / args.num_steps, 1)
 
@@ -273,3 +273,25 @@ if __name__ == '__main__':
                 logger.log()
                 logger.log("ETA: " + pretty_eta(int(steps_left / fps_estimate)))
                 logger.log()
+
+            if info["steps"] > args.num_steps:
+                break
+
+#            if done:
+#                steps_left = args.num_steps - info["steps"]
+#                completion = np.round(info["steps"] / args.num_steps, 1)
+#
+#                logger.record_tabular("% completion", completion)
+#                logger.record_tabular("steps", info["steps"])
+#                logger.record_tabular("iters", num_iters)
+#                logger.record_tabular("episodes", len(info["rewards"]))
+#                logger.record_tabular("reward (100 epi mean)", np.mean(info["rewards"][-100:]))
+#                logger.record_tabular("exploration", exploration.value(num_iters))
+#                if args.prioritized:
+#                    logger.record_tabular("max priority", replay_buffer._max_priority)
+#                fps_estimate = (float(steps_per_iter) / (float(iteration_time_est) + 1e-6)
+#                                if steps_per_iter._value is not None else "calculating...")
+#                logger.dump_tabular()
+#                logger.log()
+#                logger.log("ETA: " + pretty_eta(int(steps_left / fps_estimate)))
+#                logger.log()

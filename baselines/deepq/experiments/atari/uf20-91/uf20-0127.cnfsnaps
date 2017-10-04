@@ -1,0 +1,65 @@
+p cnf 20 35
+c this is assumption clauses
+c this is all unsatisfied current clauses
+6 11 0
+7 -11 15 0
+13 -18 -20 0
+5 -7 16 0
+-4 -15 0
+-5 -7 -16 0
+-2 -18 0
+-7 -13 18 0
+5 11 -20 0
+4 -5 20 0
+2 -11 -15 0
+-4 -11 0
+2 13 16 0
+-2 4 -5 0
+2 20 0
+-11 13 -15 0
+2 -6 7 0
+4 6 13 0
+-6 16 0
+-5 -7 11 0
+-5 -6 -20 0
+-4 -13 0
+6 18 0
+-15 20 0
+-15 -18 0
+-4 -16 0
+2 -4 0
+-4 5 20 0
+-4 -18 0
+13 15 16 0
+2 -5 11 18 0
+-5 11 13 15 0
+5 7 20 0
+5 18 20 0
+-4 -7 0
+c this is all unsatisfied learnt clauses
+c pick -2
+p cnf 20 20
+c this is assumption clauses
+c this is all unsatisfied current clauses
+6 11 0
+7 -11 15 0
+13 -18 0
+5 -7 16 0
+-5 -7 -16 0
+-7 -13 18 0
+5 11 0
+-11 -15 0
+13 16 0
+-11 13 -15 0
+-6 7 0
+6 13 0
+-6 16 0
+-5 -7 11 0
+-5 -6 0
+6 18 0
+-15 -18 0
+13 15 16 0
+-5 11 18 0
+-5 11 13 15 0
+c this is all unsatisfied learnt clauses
+c pick -18
