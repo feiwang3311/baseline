@@ -24,8 +24,8 @@ from baselines.common.misc_util import (
 from baselines.common.schedules import LinearSchedule, PiecewiseSchedule
 # when updating this to non-deperecated ones, it is important to
 # copy over LazyFrames
-from baselines.common.atari_wrappers_deprecated import wrap_dqn
-from baselines.common.azure_utils import Container
+# from baselines.common.atari_wrappers_deprecated import wrap_dqn
+# from baselines.common.azure_utils import Container
 from baselines.deepq.experiments.atari.model import model, dueling_model
 
 
@@ -34,6 +34,8 @@ def parse_args():
     # Environment
     parser.add_argument("--env", type=str, default="gym_sat_Env-v0", help="name of the game")
     parser.add_argument("--seed", type=int, default=42, help="which seed to use")
+    # Comments by Fei: about environment, are we in test mode with a test_path?
+    parser.add_argument("--test_path", type=str, default=None, help="if in the test mode, give the directory of SAT problems for testing")
     # Core DQN parameters
     parser.add_argument("--replay-buffer-size", type=int, default=int(1e6), help="replay buffer size")
     parser.add_argument("--lr", type=float, default=1e-4, help="learning rate for Adam optimizer")
@@ -110,24 +112,85 @@ def maybe_load_model(savedir, container):
         return state
 
 
+from gym.envs.SatSolver import gym_sat_Env
+"""
+    this function test the performance of the current deepq neural networks
+"""
+def test_it(test_path):
+    env = gym_sat_Env(test_path=test_path)
+    test_file_num = env.test_file_num
+    print("there are {} files to test".format(test_file_num))
+    savedir = args.save_dir
+    if savedir is None:
+        savedir = os.getenv('OPENAI_LOGDIR', None)
+    container = None
+    with U.make_session(1) as sess:
+        # initialize training graph 
+        def model_wrapper(img_in, num_actions, scope, **kwargs):
+            actual_model = dueling_model if args.dueling else model
+            return actual_model(img_in, num_actions, scope, layer_norm=args.layer_norm, **kwargs)
+        act, train, update_target, debug = deepq.build_train(
+            # make_obs_ph=lambda name: U.Uint8Input(env.observation_space.shape, name=name),
+            make_obs_ph=lambda name: U.Int8Input(env.observation_space.shape, name=name), # Change for sat env
+            q_func=model_wrapper,
+            num_actions=env.action_space.n,
+            optimizer=tf.train.AdamOptimizer(learning_rate=args.lr, epsilon=1e-4),
+            gamma=0.99,
+            grad_norm_clipping=10,
+            double_q=args.double_q,
+            param_noise=args.param_noise
+        )
+        
+        # load the model
+        U.initialize()
+        state = maybe_load_model(savedir, container)
+        update_target()
+        
+        # main testing loop (measure the average steps needed to solve it)
+        update_eps = 0.02
+        score = 0.0
+        reward = 0
+        kwargs = {}
+        for i in range(test_file_num):
+            obs = env.reset() # this reset is in test mode (because we passed test_path at the construction of env)
+                              # so the reset will iterate all test files in test_path
+            while True:
+                action = act(np.array(obs)[None], update_eps=update_eps, **kwargs)[0]
+                new_obs, rew, done, info = env.step(action)
+                obs = new_obs
+                reward += 1
+                if done:
+                    score = (score * i + reward) / (i+1)
+                    reward = 0
+                    break
+        print("the average performance is {}".format(score))
+
 if __name__ == '__main__':
     args = parse_args()
     
+    # Comments by Fei: if we are in the test mode (test_path is not None), call test_it() function:
+    if not args.test_path == None:
+        test_it(args.test_path)
+        exit(0)
+    
+    # Comments by Fei: if test_path is None, go ahead and train the model
     # Parse savedir and azure container.
     savedir = args.save_dir
     if savedir is None:
         savedir = os.getenv('OPENAI_LOGDIR', None)
-    if args.save_azure_container is not None:
-        account_name, account_key, container_name = args.save_azure_container.split(":")
-        container = Container(account_name=account_name,
-                              account_key=account_key,
-                              container_name=container_name,
-                              maybe_create=True)
-        if savedir is None:
-            # Careful! This will not get cleaned up. Docker spoils the developers.
-            savedir = tempfile.TemporaryDirectory().name
-    else:
-        container = None
+    # Comments by Fei: sat solver will probably never use container option. Most importantly, servers I used didn't install azure! big trouble
+    container = None
+#    if args.save_azure_container is not None:
+#        account_name, account_key, container_name = args.save_azure_container.split(":")
+#        container = Container(account_name=account_name,
+#                              account_key=account_key,
+#                              container_name=container_name,
+#                              maybe_create=True)
+#        if savedir is None:
+#            # Careful! This will not get cleaned up. Docker spoils the developers.
+#            savedir = tempfile.TemporaryDirectory().name
+#    else:
+#        container = None
     # Create and seed the env.
     env, monitored_env = make_env(args.env)
 
@@ -260,6 +323,7 @@ if __name__ == '__main__':
                 completion = np.round(info["steps"] / args.num_steps, 1)
 
                 logger.record_tabular("% completion", completion)
+                logger.record_tabular("td_errors", td_errors) # Comments by Fei: why not report the error as well?
                 logger.record_tabular("steps", info["steps"])
                 logger.record_tabular("iters", num_iters)
                 logger.record_tabular("episodes", len(info["rewards"]))
@@ -295,3 +359,4 @@ if __name__ == '__main__':
 #                logger.log()
 #                logger.log("ETA: " + pretty_eta(int(steps_left / fps_estimate)))
 #                logger.log()
+
