@@ -149,9 +149,22 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
 
         eps = tf.get_variable("eps", (), initializer=tf.constant_initializer(0))
 
-        q_values = q_func(observations_ph.get(), num_actions, scope="q_func")
-        deterministic_actions = tf.argmax(q_values, axis=1)
+        q_values = q_func(observations_ph.get(), num_actions, scope="q_func") # Comments by Fei: this is nbatch * nact, with values as q values
 
+        # Comments by Fei: add filter to remove non-valid actions in deterministic_actions
+        num_var = tf.shape(observations_ph.get())[2]
+        pos = tf.reduce_max(observations_ph.get(), axis = 1) # Comments by Fei: get 1 if the postive variable exists in any clauses, otherwise 0
+        neg = tf.reduce_min(observations_ph.get(), axis = 1) # Comments by Fei: get -1 if the negative variables exists in any clauses, otherwise 0
+        ind = tf.concat([pos, neg], axis = 2) # Comments by Fei: get (1, -1) if this var is present, (1, 0) if only as positive, (0, -1) if only as negative
+        ind_flat = tf.reshape(ind, [-1, num_var * 2]) # Comments by Fei: this is nbatch * nact, with 0 values labeling non_valid actions, 1 or -1 for other
+        ind_flat_filter = tf.abs(tf.cast(ind_flat, tf.float32)) # Comments by Fei: this is nbatch * nact, with 0 values labeling non_valid actions, 1 for other
+        q_min = tf.reduce_min(q_values, axis = 1)
+        q_values_adjust = q_values - tf.expand_dims(q_min, axis = 1) # Comments by Fei: make sure the maximal values are positive
+        q_values_filter = q_values_adjust * ind_flat_filter # Comments by Fei: zero-fy non-valid values, unchange valid values
+        deterministic_actions = tf.argmax(q_values_filter, axis=1)
+        # deterministic_actions = tf.argmax(q_values, axis=1)
+        
+        # Comments by Fei: add random_actions by eps percentage.
         batch_size = tf.shape(observations_ph.get())[0]
         random_actions = tf.random_uniform(tf.stack([batch_size]), minval=0, maxval=num_actions, dtype=tf.int64)
         chose_random = tf.random_uniform(tf.stack([batch_size]), minval=0, maxval=1, dtype=tf.float32) < eps
@@ -338,7 +351,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         act_f = build_act_with_param_noise(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse,
             param_noise_filter_func=param_noise_filter_func)
     else:
-        act_f = build_act(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse)
+        act_f = build_act(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse) # Comments by Fei: modified to filter out non-valid actions
 
     with tf.variable_scope(scope, reuse=reuse):
         # set up placeholders

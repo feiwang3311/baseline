@@ -144,10 +144,10 @@ def test_it(test_path):
         # load the model
         U.initialize()
         state = maybe_load_model(savedir, container)
-        update_target()
+        # update_target()
         
         # main testing loop (measure the average steps needed to solve it)
-        update_eps = 0.02
+        update_eps = 0.01
         score = 0.0
         reward = 0
         kwargs = {}
