@@ -56,7 +56,7 @@ def parse_args():
     parser.add_argument("--prioritized-beta0", type=float, default=0.4, help="initial value of beta parameters for prioritized replay")
     parser.add_argument("--prioritized-eps", type=float, default=1e-6, help="eps parameter for prioritized replay buffer")
     # Checkpointing
-    parser.add_argument("--save-dir", type=str, default="./temp_save", help="directory in which training state and model should be saved.")
+    parser.add_argument("--save-dir", type=str, default="./temp_save_permute_train", help="directory in which training state and model should be saved.")
     parser.add_argument("--save-azure-container", type=str, default=None,
                         help="It present data will saved/loaded from Azure. Should be in format ACCOUNT_NAME:ACCOUNT_KEY:CONTAINER")
     parser.add_argument("--save-freq", type=int, default=1e4, help="save model once every time this many iterations are completed")
