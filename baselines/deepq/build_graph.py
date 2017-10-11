@@ -164,9 +164,12 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
         deterministic_actions = tf.argmax(q_values_filter, axis=1)
         # deterministic_actions = tf.argmax(q_values, axis=1)
         
-        # Comments by Fei: add random_actions by eps percentage.
+        # Comments by Fei: use the same filter to remove non_valid actions from random_actions too!
         batch_size = tf.shape(observations_ph.get())[0]
-        random_actions = tf.random_uniform(tf.stack([batch_size]), minval=0, maxval=num_actions, dtype=tf.int64)
+        random_perturb = tf.random_normal(tf.shape(ind_flat_filter), mean=0.0, stddev=0.01, dtype=tf.float32)
+        random_overlay = ind_flat_filter + random_perturb
+        random_actions = tf.argmax(random_overlay, axis = 1)
+        # random_actions = tf.random_uniform(tf.stack([batch_size]), minval=0, maxval=num_actions, dtype=tf.int64)
         chose_random = tf.random_uniform(tf.stack([batch_size]), minval=0, maxval=1, dtype=tf.float32) < eps
         stochastic_actions = tf.where(chose_random, random_actions, deterministic_actions)
 
