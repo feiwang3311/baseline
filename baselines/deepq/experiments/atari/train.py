@@ -112,12 +112,23 @@ def maybe_load_model(savedir, container):
         return state
 
 
-from gym.envs.SatSolver import gym_sat_Env
 """
     this function test the performance of the current deepq neural networks
 """
 def test_it(test_path):
-    env = gym_sat_Env(test_path=test_path)
+    # Comments by Fei: specialized import (not supposed to be public)
+    from gym.envs.SatSolver import gym_sat_Env, gym_sat_sort_Env, gym_sat_permute_Env
+    env_type = args.env
+    if env_type == "gym_sat_Env-v0": 
+        env = gym_sat_Env(test_path = test_path)
+    elif env_type == "gym_sat_Env-v1": 
+        env = gym_sat_sort_Env(test_path = test_path)
+    elif env_type == "gym_sat_Env-v2": 
+        env = gym_sat_permute_Env(test_path = test_path)
+    else: 
+        print("ERROR: env is not one of the pre-defined mode")
+        return
+
     test_file_num = env.test_file_num
     print("there are {} files to test".format(test_file_num))
     savedir = args.save_dir
