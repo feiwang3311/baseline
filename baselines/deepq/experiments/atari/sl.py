@@ -101,7 +101,7 @@ class data_shuffler(object):
 		if self.lastUsed + size > self.num_train:
 			self.lastUsed = 0
 			if permute:
-				print(self.train["trainX"][500, 4, :, 0])
+				print(self.train["trainX"][500, 4, :, 0]) # Comments by Fei: just to prove that permutation happend. Can remove.
 				self.permute_train()
 		x = self.train["trainX"][self.lastUsed : self.lastUsed + size, :, :, :]
 		y = self.train["trainY"][self.lastUsed : self.lastUsed + size]
