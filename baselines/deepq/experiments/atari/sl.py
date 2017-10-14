@@ -34,6 +34,7 @@ def parse_args():
     # Comments by Fei: about environment, are we in test mode with a test_path?
     parser.add_argument("--test_path", type=str, default=None, help="if in the test mode, give the directory of SAT problems for testing")
     parser.add_argument("--dump_pair_into", type=str, default="SLData", help="if in the test mode, give the directory of saving state-action pairs")
+    parser.add_argument("--permute_training", default=False, help="if true, the training data will be permuted after every round of usage")
     # Core DQN parameters
     parser.add_argument("--replay-buffer-size", type=int, default=int(1e6), help="replay buffer size")
     parser.add_argument("--lr", type=float, default=1e-4, help="learning rate for Adam optimizer")
@@ -96,20 +97,36 @@ class data_shuffler(object):
 	"""
 		this function return a batch of trainig data
 	"""	
-	def next_batch(self, size):
-		if self.lastUsed + size >= self.num_train:
+	def next_batch(self, size, permute = False):
+		if self.lastUsed + size > self.num_train:
 			self.lastUsed = 0
+			if permute:
+				print(self.train["trainX"][500, 4, :, 0])
+				self.permute_train()
 		x = self.train["trainX"][self.lastUsed : self.lastUsed + size, :, :, :]
 		y = self.train["trainY"][self.lastUsed : self.lastUsed + size]
 		self.lastUsed += size
 		return [x, y] 
+
+	"""
+		this function permutes the states (X input) of the training data
+	"""
+	def permute_train(self):
+		toPermute = self.train["trainX"]
+		# toPermute is of (self.num_train, max_clause, max_var, 1). We need to permute dim 1, within valid range
+		for i in range(self.num_train):
+			toPermutePer = toPermute[i, :, :, :] # toPermutePer is (max_clause, max_var, 1)
+			valid_ind = np.any(toPermutePer != 0, axis = 1) # valid_ind should be (max_clause, 1) with 1 for valid, 0 for not
+			valid_lim = np.sum(valid_ind) # valid_lim is a scalar
+			np.random.shuffle(toPermutePer[:valid_lim]) # this shuffles toPermutePer in place (only the valid rows)
+			# changing toPermutePer also changes toPermute, and also changes self.train["trainX"]. This is IMPORTANT!
 
 def maybe_save_model(savedir, model_num):
     """This function checkpoints the model of the training algorithm."""
     if savedir is None:
         return
     start_time = time.time()
-    model_dir = "model-{}".format(model_num)
+    model_dir = "model-{}".format(int(model_num))
     U.save_state(os.path.join(savedir, model_dir, "saved"))
     logger.log("Saved model in {} seconds\n".format(time.time() - start_time))
 
@@ -117,31 +134,10 @@ def maybe_load_model(savedir, model_num):
     """Load model if present at the specified path."""
     if savedir is None:
         return
-    model_dir = "model-{}".format(model_num) # Comments by Fei: for whatever change in maybe_save_model, reflect it here!
+    model_dir = "model-{}".format(int(model_num)) # Comments by Fei: for whatever change in maybe_save_model, reflect it here!
     U.load_state(os.path.join(savedir, model_dir, "saved"))
 
-def super_train(filename, num_steps, nbatch, num_report, layer_norm, num_procs, num_model, load_model_num = -1):
-	"""
-		this function trains a CNN by supervised learning
-		filename: the name of file that pickle dumped the training and testing data ind_flat_filter
-		num_steps: total number of steps of supervised training
-		nbatch: number of samples used per training step 
-		num_report: by how many steps should we output the training and testing accuracy
-		layer_norm: boolean flag of whether we want to normalize each layer
-		num_procs: number of processors used in this training
-		num_model: how often should model name change
-		load_model_num: if not negative, load load_model_num at args.save_dir before supervised training
-	"""
-
-	print("read files from pickle_dump file %s" % (filename))
-	data = data_shuffler(filename, nbatch)
-	num_var = int(data.max_var)
-	num_clause = int(data.max_clause)
-	num_actions = num_var * 2
-	
-	observations_ph = tf.placeholder(tf.float32, shape = [None, num_clause, num_var, 1], name = "states")
-	y_ = tf.placeholder(tf.int64, shape = [None], name = "actions")
-
+def deepq_act_model(observations_ph, num_actions, layer_norm):
 	# construct the model
 	kwargs = {}
 	with tf.variable_scope("deepq", reuse=None):
@@ -157,6 +153,82 @@ def super_train(filename, num_steps, nbatch, num_report, layer_norm, num_procs, 
 		q_min = tf.reduce_min(q_values, axis = 1)
 		q_values_adjust = q_values - tf.expand_dims(q_min, axis = 1) # Comments by Fei: make sure the maximal values are positive
 		q_values_filter = q_values_adjust * ind_flat_filter # Comments by Fei: zero-fy non-valid values, unchange valid values
+		return q_values_filter
+
+def test_performance():
+	"""
+		this function test the performance of the supervised learning model in gym environment
+	"""
+	# Comments by Fei: set up environment
+	from gym.envs.SatSolver import gym_sat_Env, gym_sat_sort_Env, gym_sat_permute_Env
+	env_type = args.env
+	test_path = args.test_path
+	if env_type == None or test_path == None:
+		print("Error: both env_type and test_path need to be provided, as defaults or command line arguments")
+		return
+	if env_type == "gym_sat_Env-v0": 
+		env = gym_sat_Env(test_path = test_path)
+	elif env_type == "gym_sat_Env-v1": 
+		env = gym_sat_sort_Env(test_path = test_path)
+	elif env_type == "gym_sat_Env-v2": 
+		env = gym_sat_permute_Env(test_path = test_path)
+	else: 
+		print("ERROR: env is not one of the pre-defined mode")
+		return
+	test_file_num = env.test_file_num
+	print("there are {} files to test".format(test_file_num))
+
+	# Comments by Fei: build and load model	
+	observations_ph = tf.placeholder(tf.float32, shape = (env.observation_space[None]).shape, name = "states")
+	q_values_filter = deepq_act_model(observations_ph, env.action_space.n, args.layer_norm)
+	action = tf.argmax(q_values_filter, axis = 1)
+	with tf.Session() as sess:
+		sess.run(tf.global_variables_initializer())
+		save_dir = args.save_dir
+		load_model_num = args.load_model
+		if load_model_num >= 0: # there is a model to load, otherwise we will be testing based on a random initialization
+			print("load model number {} before supervised learning".format(load_model_num))
+			maybe_load_model(save_dir, load_model_num)
+
+		# Comments by Fei: test model with environment
+		score = 0.0
+		reward = 0
+		for i in range(test_file_num):
+			obs = env.reset() # this reset is in test mode (because we passed test_path at the construction of env)
+							# so the reset will iterate all test files in test_path, instead of randomly picking a file
+			while True:
+				act = sess.run(action, feed_dict = {observations_ph: np.array(obs)[None]})
+				new_obs, rew, done, info = env.step(act)
+				obs = new_obs
+				reward += 1
+				if done:
+					score = (score * i + reward) / (i+1)
+					reward = 0
+					break
+		print("the average performance is {}".format(score))
+
+def super_train(filename, num_steps, nbatch, num_report, layer_norm, num_procs, num_model, load_model_num = -1, permute = False):
+	"""
+		this function trains a CNN by supervised learning
+		filename: the name of file that pickle dumped the training and testing data ind_flat_filter
+		num_steps: total number of steps of supervised training
+		nbatch: number of samples used per training step 
+		num_report: by how many steps should we output the training and testing accuracy
+		layer_norm: boolean flag of whether we want to normalize each layer
+		num_procs: number of processors used in this training
+		num_model: how often should model name change
+		load_model_num: if not negative, load load_model_num at args.save_dir before supervised training
+		permute: if we want the dataX to be permuted after using, make permute True
+	"""
+	print("read files from pickle_dump file %s" % (filename))
+	data = data_shuffler(filename, nbatch)
+	num_var = int(data.max_var)
+	num_clause = int(data.max_clause)
+	num_actions = num_var * 2
+	
+	observations_ph = tf.placeholder(tf.float32, shape = [None, num_clause, num_var, 1], name = "states")
+	y_ = tf.placeholder(tf.int64, shape = [None], name = "actions")
+	q_values_filter = deepq_act_model(observations_ph, num_actions, layer_norm)
 
 	# Train and evaluate
 	with tf.name_scope("loss"):
@@ -182,7 +254,7 @@ def super_train(filename, num_steps, nbatch, num_report, layer_norm, num_procs, 
 
 		# supervised training cycle
 		for i in range(num_steps):
-			batch = data.next_batch(nbatch)
+			batch = data.next_batch(nbatch, permute = permute) # training data will be permuted after using one round of them!
 			feed_dict={observations_ph: batch[0], y_: batch[1]}
 			sess.run(train_step, feed_dict)
 			if i > 0 and i % num_report == 0: # report accuracy
@@ -196,6 +268,13 @@ def super_train(filename, num_steps, nbatch, num_report, layer_norm, num_procs, 
 
 if __name__ == '__main__':
 	args = parse_args()
+
+	# if test_path is given, we should be in the test mode
+	if not args.test_path is None:
+		test_performance()
+		exit(0)
+
+	# otherwise, enter the training mode
 	filename = args.dump_pair_into
 	num_steps = args.num_steps
 	nbatch = args.batch_size
@@ -204,4 +283,8 @@ if __name__ == '__main__':
 	num_procs = 16
 	num_model = 1e6
 	load_model_num = args.load_model
-	super_train(filename, num_steps, nbatch, num_report, layer_norm, num_procs, num_model, load_model_num = load_model_num)
+	permute_training = args.permute_training
+	if permute_training:
+		print("PERMUTE_TRAINING!")
+	super_train(filename, num_steps, nbatch, num_report, layer_norm, num_procs, num_model, 
+		load_model_num = load_model_num, permute = permute_training)
