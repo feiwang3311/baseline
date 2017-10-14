@@ -6,6 +6,7 @@ import tensorflow as tf
 import tempfile
 import time
 import json
+import pickle
 
 import baselines.common.tf_util as U
 
@@ -36,6 +37,7 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42, help="which seed to use")
     # Comments by Fei: about environment, are we in test mode with a test_path?
     parser.add_argument("--test_path", type=str, default=None, help="if in the test mode, give the directory of SAT problems for testing")
+    parser.add_argument("--dump_pair_into", type=str, default=None, help="if in the test mode, give the directory of saving state-action pairs")
     # Core DQN parameters
     parser.add_argument("--replay-buffer-size", type=int, default=int(1e6), help="replay buffer size")
     parser.add_argument("--lr", type=float, default=1e-4, help="learning rate for Adam optimizer")
@@ -113,7 +115,8 @@ def maybe_load_model(savedir, container):
 
 
 """
-    this function test the performance of the current deepq neural networks
+    this function test the performance of the current deepq neural networks. 
+    if dump_pair_into is provided, it will also dump state-action pair into the given directory
 """
 def test_it(test_path):
     # Comments by Fei: specialized import (not supposed to be public)
@@ -155,18 +158,30 @@ def test_it(test_path):
         # load the model
         U.initialize()
         state = maybe_load_model(savedir, container)
-        # update_target()
+
+        # preparation if we want to dump state-action pair
+        dumpdir = args.dump_pair_into
+        if dumpdir is None: 
+            doDump = False
+        else:
+            doDump = True
+            stateList = []
+            actionList = []
         
         # main testing loop (measure the average steps needed to solve it)
-        update_eps = 0.01
+        update_eps = 0.00 # all steps should be deterministic by the network we have!
         score = 0.0
         reward = 0
         kwargs = {}
         for i in range(test_file_num):
             obs = env.reset() # this reset is in test mode (because we passed test_path at the construction of env)
-                              # so the reset will iterate all test files in test_path
+                              # so the reset will iterate all test files in test_path, instead of randomly picking a file
             while True:
                 action = act(np.array(obs)[None], update_eps=update_eps, **kwargs)[0]
+                # if we want to dump state-action pair, here is the chance (np.array(obs)[None], action)
+                if doDump:
+                    stateList.append(np.array(obs))
+                    actionList.append(action)
                 new_obs, rew, done, info = env.step(action)
                 obs = new_obs
                 reward += 1
@@ -174,6 +189,10 @@ def test_it(test_path):
                     score = (score * i + reward) / (i+1)
                     reward = 0
                     break
+        if doDump:
+            with open(dumpdir, "wb") as f:
+                pickle.dump({"states": stateList, "actions": actionList}, f)
+                print("dump data in {}, total number is {}".format(dumpdir, len(actionList)))
         print("the average performance is {}".format(score))
 
 if __name__ == '__main__':
