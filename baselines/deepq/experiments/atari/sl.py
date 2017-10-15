@@ -81,7 +81,7 @@ class data_shuffler(object):
 		dataY_shuffle = dataY[index] # I think this is data copy
 
 		# divide data into training and testing (May want to optimize on training size)
-		ratio = 0.8
+		ratio = 0.99
 		if nbatch > 0: # nbatch is given at construction time, smartly adjust num_train to be a multiple of nbatch
 			self.num_train = int(self.num_data * ratio) // nbatch * nbatch 
 		if nbatch == -1: # no nbatch information given
@@ -102,7 +102,8 @@ class data_shuffler(object):
 			self.lastUsed = 0
 			if permute:
 				print(self.train["trainX"][500, 4, :, 0]) # Comments by Fei: just to prove that permutation happend. Can remove.
-				self.permute_train()
+				print(self.train["trainY"][500])
+				self.permute_train_col()
 		x = self.train["trainX"][self.lastUsed : self.lastUsed + size, :, :, :]
 		y = self.train["trainY"][self.lastUsed : self.lastUsed + size]
 		self.lastUsed += size
@@ -120,6 +121,26 @@ class data_shuffler(object):
 			valid_lim = np.sum(valid_ind) # valid_lim is a scalar
 			np.random.shuffle(toPermutePer[:valid_lim]) # this shuffles toPermutePer in place (only the valid rows)
 			# changing toPermutePer also changes toPermute, and also changes self.train["trainX"]. This is IMPORTANT!
+	"""
+		this function permutes the states (X input) and the actions, in columns, of the training data
+	"""
+	def permute_train_col(self):
+		toPermuteX = self.train["trainX"] # (self.num_train, max_clause, max_var, 1), we need to permute dim 2
+		toPermuteY = self.train["trainY"] # (self.num_train,), we need to permute "dim 2" by the same order
+		for i in range(self.num_train):
+			toPermutePerX = toPermuteX[i, :, :, :] 
+			toPermutePerY = toPermuteY[i]
+			s = np.arange(self.max_var) # this is the seed of random shuffle TODO: can be a field
+			np.random.shuffle(s)
+			
+			onehot = np.zeros(2 * self.max_var) # cast toPermutePerY as onehot encoding
+			onehot[toPermutePerY] = 1
+			onehot = np.reshape(onehot, (2, self.max_var), order = 'F') # reshape onehot as (2, self.max_var)
+			onehot = onehot[:, s] # shuffle onehot by seed
+			onehot = np.reshape(onehot, (2 * self.max_var), order = 'F') # reshape onehot back to 1 d
+			
+			self.train["trainY"][i] = np.argmax(onehot) # get the new Y label
+			self.train["trainX"][i] = toPermutePerX[:, s, :] # get the new X state
 
 def maybe_save_model(savedir, model_num):
     """This function checkpoints the model of the training algorithm."""
