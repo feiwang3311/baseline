@@ -74,22 +74,21 @@ class data_shuffler(object):
 		dataY = np.asarray(data_dict["actions"]) # should be numpy array of ndata, each content is int of choice (index)
 		(self.num_data, self.max_clause, self.max_var, _) = dataX.shape
 		
-		# shuffle data
-		index = [i for i in range(self.num_data)]
-		shuffle(index)
-		dataX_shuffle = dataX[index] # I think this is data copy
-		dataY_shuffle = dataY[index] # I think this is data copy
-
 		# divide data into training and testing (May want to optimize on training size)
 		ratio = 0.99
 		if nbatch > 0: # nbatch is given at construction time, smartly adjust num_train to be a multiple of nbatch
 			self.num_train = int(self.num_data * ratio) // nbatch * nbatch 
 		if nbatch == -1: # no nbatch information given
 			self.num_train = int(self.num_data * ratio)
-		dataX_train = dataX_shuffle[:self.num_train, :, :, :]
-		dataY_train = dataY_shuffle[:self.num_train]
-		dataX_test = dataX_shuffle[self.num_train:, :, :, :]
-		dataY_test = dataY_shuffle[self.num_train:]
+
+		# shuffle training data
+		index = [i for i in range(self.num_train)]
+		shuffle(index)
+		dataX_train = dataX[index]
+		dataY_train = dataY[index]
+		dataX_test = dataX[self.num_train:]
+		dataY_test = dataY[self.num_train:]
+
 		self.train = {"trainX": dataX_train, "trainY": dataY_train}
 		self.test = {"testX": dataX_test, "testY": dataY_test}
 		self.lastUsed = 0
@@ -285,7 +284,7 @@ def super_train(filename, num_steps, nbatch, num_report, layer_norm, num_procs, 
 				test_accuracy = sess.run(accuracy, feed_dict_test)
 				print('step %d, testing accuracy %g' % (i, test_accuracy))
 				# save model
-				maybe_save_model(save_dir, i // num_model + load_model_num if load_model_num >= 0 else 0)
+				maybe_save_model(save_dir, i // num_model + (load_model_num if load_model_num >= 0 else 0))
 
 if __name__ == '__main__':
 	args = parse_args()
@@ -307,5 +306,6 @@ if __name__ == '__main__':
 	permute_training = args.permute_training
 	if permute_training:
 		print("PERMUTE_TRAINING!")
-	super_train(filename, num_steps, nbatch, num_report, layer_norm, num_procs, num_model, 
+	super_train(filename = filename, num_steps = num_steps, nbatch = nbatch, num_report = num_report, 
+		layer_norm = layer_norm, num_procs = num_procs, num_model = num_model, 
 		load_model_num = load_model_num, permute = permute_training)

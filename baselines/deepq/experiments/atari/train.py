@@ -112,6 +112,10 @@ def maybe_load_model(savedir, container):
         U.load_state(os.path.join(savedir, model_dir, "saved"))
         logger.log("Loaded models checkpoint at {} iterations".format(state["num_iters"]))
         return state
+    else:
+        model_dir = "model-{}".format(4.0)
+        U.load_state(os.path.join(savedir, model_dir, "saved"))
+        return None
 
 
 """
@@ -252,7 +256,7 @@ if __name__ == '__main__':
             param_noise=args.param_noise
         )
 
-        approximate_num_iters = args.num_steps / 4
+        approximate_num_iters = args.num_steps
         exploration = PiecewiseSchedule([
             (0, 1.0),
             (approximate_num_iters / 50, 0.1),
