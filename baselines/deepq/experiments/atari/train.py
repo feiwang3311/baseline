@@ -62,6 +62,7 @@ def parse_args():
     parser.add_argument("--save-azure-container", type=str, default=None,
                         help="It present data will saved/loaded from Azure. Should be in format ACCOUNT_NAME:ACCOUNT_KEY:CONTAINER")
     parser.add_argument("--save-freq", type=int, default=1e4, help="save model once every time this many iterations are completed")
+    parser.add_argument("--model-rename-freq", type=int, default=1e6, help="save model at different name once every time this many iterations are completed")
     boolean_flag(parser, "load-on-start", default=True, help="if true and model was previously saved then training will be resumed")
     return parser.parse_args()
 
@@ -80,7 +81,7 @@ def maybe_save_model(savedir, container, state):
     if savedir is None:
         return
     start_time = time.time()
-    model_dir = "model-{}".format(state["num_iters"] // 1e7) # Comments by Fei: do some thing to make the name not so different (don't want to save too many models)
+    model_dir = "model-{}".format(state["num_iters"] // args.model_rename_freq) # Comments by Fei: do some thing to make the name not so different (don't want to save too many models)
     U.save_state(os.path.join(savedir, model_dir, "saved"))
     if container is not None:
         container.put(os.path.join(savedir, model_dir), model_dir)
@@ -106,15 +107,15 @@ def maybe_load_model(savedir, container):
         found_model = os.path.exists(state_path)
     if found_model:
         state = pickle_load(state_path, compression=True)
-        model_dir = "model-{}".format(state["num_iters"] // 1e7) # Comments by Fei: for whatever change in maybe_save_model, reflect it here!
+        model_dir = "model-{}".format(state["num_iters"] // args.model_rename_freq) # Comments by Fei: for whatever change in maybe_save_model, reflect it here!
         if container is not None:
             container.get(savedir, model_dir)
         U.load_state(os.path.join(savedir, model_dir, "saved"))
         logger.log("Loaded models checkpoint at {} iterations".format(state["num_iters"]))
         return state
     else:
-        model_dir = "model-{}".format(4.0)
-        U.load_state(os.path.join(savedir, model_dir, "saved"))
+#        model_dir = "model-{}".format(4.0)
+#        U.load_state(os.path.join(savedir, model_dir, "saved"))
         return None
 
 
