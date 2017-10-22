@@ -8,24 +8,32 @@ def layer_norm_fn(x, relu=True):
         x = tf.nn.relu(x)
     return x
 
+def max_pool_2x2(x):
+  return tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
 
-def model(img_in, num_actions, scope, reuse=False, layer_norm=False):
+def model(img_in, num_actions, scope, reuse=False, layer_norm=False, keep_prob=1.0):
     """As described in https://storage.googleapis.com/deepmind-data/assets/papers/DeepMindNature14236Paper.pdf"""
     with tf.variable_scope(scope, reuse=reuse):
         out = img_in
         with tf.variable_scope("convnet"):
-            # original architecture
+            # Comments by Fei: add max_pool layers
             out = layers.convolution2d(out, num_outputs=32, kernel_size=8, stride=4, activation_fn=tf.nn.relu)
+            out = max_pool_2x2(out)
             out = layers.convolution2d(out, num_outputs=64, kernel_size=4, stride=2, activation_fn=tf.nn.relu)
+            out = max_pool_2x2(out)
             out = layers.convolution2d(out, num_outputs=64, kernel_size=3, stride=1, activation_fn=tf.nn.relu)
+            out = max_pool_2x2(out)
         conv_out = layers.flatten(out)
 
         with tf.variable_scope("action_value"):
-            value_out = layers.fully_connected(conv_out, num_outputs=512, activation_fn=None)
+            # Comments by Fei: change num_outputs to 1024 (was 512)
+            value_out = layers.fully_connected(conv_out, num_outputs=1024, activation_fn=None)
             if layer_norm:
                 value_out = layer_norm_fn(value_out, relu=True)
             else:
                 value_out = tf.nn.relu(value_out)
+            # Comments by Fei: add dropout here
+            value_out = tf.nn.dropout(value_out, keep_prob)
             value_out = layers.fully_connected(value_out, num_outputs=num_actions, activation_fn=None)
         return value_out
 

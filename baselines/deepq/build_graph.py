@@ -393,6 +393,10 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         errors = U.huber_loss(td_error)
         weighted_error = tf.reduce_mean(importance_weights_ph * errors)
 
+        # L2 regularization
+#        lossL2 = tf.add_n([ tf.nn.l2_loss(v) for v in q_func_vars ]) * 0.001
+#        weighted_error = weighted_error + lossL2
+
         # compute optimization op (potentially with gradient clipping)
         if grad_norm_clipping is not None:
             optimize_expr = U.minimize_and_clip(optimizer,

@@ -12,7 +12,7 @@ import baselines.common.tf_util as U
 
 from baselines import logger
 from baselines import deepq
-from baselines.deepq.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
+from baselines.deepq.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer, ReplayBufferSp
 from baselines.common.misc_util import (
     boolean_flag,
     pickle_load,
@@ -33,7 +33,7 @@ from baselines.deepq.experiments.atari.model import model, dueling_model
 def parse_args():
     parser = argparse.ArgumentParser("DQN experiments for Atari games")
     # Environment
-    parser.add_argument("--env", type=str, default="gym_sat_Env-v0", help="name of the game")
+    parser.add_argument("--env", type=str, default=None, help="name of the game")
     parser.add_argument("--seed", type=int, default=42, help="which seed to use")
     # Comments by Fei: about environment, are we in test mode with a test_path?
     parser.add_argument("--test_path", type=str, default=None, help="if in the test mode, give the directory of SAT problems for testing")
@@ -41,7 +41,7 @@ def parse_args():
     # Core DQN parameters
     parser.add_argument("--replay-buffer-size", type=int, default=int(1e6), help="replay buffer size")
     parser.add_argument("--lr", type=float, default=1e-4, help="learning rate for Adam optimizer")
-    parser.add_argument("--num-steps", type=int, default=int(2e8), help="total number of steps to run the environment for")
+    parser.add_argument("--num-steps", type=int, default=int(5e6), help="total number of steps to run the environment for")
     parser.add_argument("--batch-size", type=int, default=32, help="number of transitions to optimize at the same time")
     parser.add_argument("--learning-freq", type=int, default=4, help="number of iterations between every optimization step")
     parser.add_argument("--target-update-freq", type=int, default=40000, help="number of iterations between every target network update")
@@ -57,12 +57,14 @@ def parse_args():
     parser.add_argument("--prioritized-alpha", type=float, default=0.6, help="alpha parameter for prioritized replay buffer")
     parser.add_argument("--prioritized-beta0", type=float, default=0.4, help="initial value of beta parameters for prioritized replay")
     parser.add_argument("--prioritized-eps", type=float, default=1e-6, help="eps parameter for prioritized replay buffer")
+    parser.add_argument("--keep_prob", type=float, default=1.0, help="the probably of keeping a hidden neuron in dropout")
     # Checkpointing
-    parser.add_argument("--save-dir", type=str, default="./temp_save_permute_train", help="directory in which training state and model should be saved.")
+    parser.add_argument("--save-dir", type=str, default=None, help="directory in which training state and model should be saved.")
+    parser.add_argument("--model-dir", type=str, default=None, help="directory in which the model is saved for testing")
     parser.add_argument("--save-azure-container", type=str, default=None,
                         help="It present data will saved/loaded from Azure. Should be in format ACCOUNT_NAME:ACCOUNT_KEY:CONTAINER")
-    parser.add_argument("--save-freq", type=int, default=1e4, help="save model once every time this many iterations are completed")
-    parser.add_argument("--model-rename-freq", type=int, default=1e6, help="save model at different name once every time this many iterations are completed")
+    parser.add_argument("--save-freq", type=int, default=5e5, help="save model once every time this many iterations are completed")
+    parser.add_argument("--model-rename-freq", type=int, default=5e5, help="save model at different name once every time this many iterations are completed")
     boolean_flag(parser, "load-on-start", default=True, help="if true and model was previously saved then training will be resumed")
     return parser.parse_args()
 
@@ -114,10 +116,10 @@ def maybe_load_model(savedir, container):
         logger.log("Loaded models checkpoint at {} iterations".format(state["num_iters"]))
         return state
     else:
-#        model_dir = "model-{}".format(4.0)
-#        U.load_state(os.path.join(savedir, model_dir, "saved"))
-        return None
-
+        model_dir = args.model_dir
+        if model_dir is not None:
+            U.load_state(os.path.join(savedir, model_dir, "saved"))
+        return None 
 
 """
     this function test the performance of the current deepq neural networks. 
@@ -125,7 +127,7 @@ def maybe_load_model(savedir, container):
 """
 def test_it(test_path):
     # Comments by Fei: specialized import (not supposed to be public)
-    from gym.envs.SatSolver import gym_sat_Env, gym_sat_sort_Env, gym_sat_permute_Env
+    from gym.envs.SatSolver import gym_sat_Env, gym_sat_sort_Env, gym_sat_permute_Env, gym_sat_graph_Env, gym_sat_graph2_Env
     env_type = args.env
     if env_type == "gym_sat_Env-v0": 
         env = gym_sat_Env(test_path = test_path)
@@ -133,6 +135,10 @@ def test_it(test_path):
         env = gym_sat_sort_Env(test_path = test_path)
     elif env_type == "gym_sat_Env-v2": 
         env = gym_sat_permute_Env(test_path = test_path)
+    elif env_type == "gym_sat_Env-v3":
+        env = gym_sat_graph_Env(test_path = test_path)
+    elif env_type == "gym_sat_Env-v4":
+        env = gym_sat_graph2_Env(test_path = test_path)
     else: 
         print("ERROR: env is not one of the pre-defined mode")
         return
@@ -244,7 +250,7 @@ if __name__ == '__main__':
         # Create training graph and replay buffer
         def model_wrapper(img_in, num_actions, scope, **kwargs):
             actual_model = dueling_model if args.dueling else model
-            return actual_model(img_in, num_actions, scope, layer_norm=args.layer_norm, **kwargs)
+            return actual_model(img_in, num_actions, scope, layer_norm=args.layer_norm, keep_prob = args.keep_prob, **kwargs)
         act, train, update_target, debug = deepq.build_train(
             # make_obs_ph=lambda name: U.Uint8Input(env.observation_space.shape, name=name),
             make_obs_ph=lambda name: U.Int8Input(env.observation_space.shape, name=name), # Change for sat env
@@ -268,7 +274,8 @@ if __name__ == '__main__':
             replay_buffer = PrioritizedReplayBuffer(args.replay_buffer_size, args.prioritized_alpha)
             beta_schedule = LinearSchedule(approximate_num_iters, initial_p=args.prioritized_beta0, final_p=1.0)
         else:
-            replay_buffer = ReplayBuffer(args.replay_buffer_size)
+            # Comments by Fei: changed to ReplayBufferSp to save space of saved transactions
+            replay_buffer = ReplayBufferSp(args.replay_buffer_size)
 
         U.initialize()
         update_target()
