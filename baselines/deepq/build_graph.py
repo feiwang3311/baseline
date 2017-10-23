@@ -138,7 +138,7 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
 
     Returns
     -------
-    act: (tf.Variable, bool, float) -> tf.Variable
+    act: (tf.Variable, bool, float) -> [tf.Variable, tf.TensorQ]
         function to select an action given observation.
 `       See the top of the file for details.
     """
@@ -160,8 +160,9 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
         ind_flat_filter = tf.abs(tf.cast(ind_flat, tf.float32)) # Comments by Fei: this is nbatch * nact, with 0 values labeling non_valid actions, 1 for other
         q_min = tf.reduce_min(q_values, axis = 1)
         q_values_adjust = q_values - tf.expand_dims(q_min, axis = 1) # Comments by Fei: make sure the maximal values are positive
-        q_values_filter = q_values_adjust * ind_flat_filter # Comments by Fei: zero-fy non-valid values, unchange valid values
-        deterministic_actions = tf.argmax(q_values_filter, axis=1)
+        q_values_filter = q_values_adjust * ind_flat_filter # Comments by Fei: zero-fy non-valid values, don't change valid values
+        q_values_filter_adjust = q_values_filter + tf.expand_dims(q_min, axis = 1) # Comments by Fei: adjust back (to keep the valid values unchanged)
+        deterministic_actions = tf.argmax(q_values_filter_adjust, axis=1)
         # deterministic_actions = tf.argmax(q_values, axis=1)
         
         # Comments by Fei: use the same filter to remove non_valid actions from random_actions too!
@@ -176,7 +177,7 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
         output_actions = tf.cond(stochastic_ph, lambda: stochastic_actions, lambda: deterministic_actions)
         update_eps_expr = eps.assign(tf.cond(update_eps_ph >= 0, lambda: update_eps_ph, lambda: eps))
         act = U.function(inputs=[observations_ph, stochastic_ph, update_eps_ph],
-                         outputs=output_actions,
+                         outputs=[output_actions, q_values_filter_adjust],
                          givens={update_eps_ph: -1.0, stochastic_ph: True},
                          updates=[update_eps_expr])
         return act

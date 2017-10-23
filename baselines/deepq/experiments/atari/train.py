@@ -125,6 +125,7 @@ def maybe_load_model(savedir, container):
     this function test the performance of the current deepq neural networks. 
     if dump_pair_into is provided, it will also dump state-action pair into the given directory
 """
+import scipy.sparse as sp
 def test_it(test_path):
     # Comments by Fei: specialized import (not supposed to be public)
     from gym.envs.SatSolver import gym_sat_Env, gym_sat_sort_Env, gym_sat_permute_Env, gym_sat_graph_Env, gym_sat_graph2_Env
@@ -188,11 +189,23 @@ def test_it(test_path):
             obs = env.reset() # this reset is in test mode (because we passed test_path at the construction of env)
                               # so the reset will iterate all test files in test_path, instead of randomly picking a file
             while True:
-                action = act(np.array(obs)[None], update_eps=update_eps, **kwargs)[0]
+                action, q_values = act(np.array(obs)[None], update_eps=update_eps, **kwargs)
+                action = action[0]
+                
                 # if we want to dump state-action pair, here is the chance (np.array(obs)[None], action)
                 if doDump:
-                    stateList.append(np.array(obs))
-                    actionList.append(action)
+                    # Comments by Fei: append state in sparse representation!
+                    obs_shape = obs.shape
+                    assert len(obs_shape) == 3, "observations is not 3-D"
+                    assert obs_shape[2] == 1, "observations 3rd dimension is not of size 1"
+                    newobs = sp.csc_matrix(obs[:,:,0])
+                    stateList.append(newobs) 
+                    # Comments by Fei: append action as q_values, not just the final choice
+                    q_values_shape = q_values.shape
+                    assert len(q_values_shape) == 2, "q_values is not 2-D"
+                    assert q_values_shape[0] == 1, "q_values 1st dimension is not of size 1"
+                    actionList.append(q_values[0,:])
+
                 new_obs, rew, done, info = env.step(action)
                 obs = new_obs
                 reward += 1
@@ -319,7 +332,7 @@ if __name__ == '__main__':
                 kwargs['update_param_noise_threshold'] = update_param_noise_threshold
                 kwargs['update_param_noise_scale'] = (num_iters % args.param_noise_update_freq == 0)
 
-            action = act(np.array(obs)[None], update_eps=update_eps, **kwargs)[0]
+            action = act(np.array(obs)[None], update_eps=update_eps, **kwargs)[0][0]
             reset = False
             new_obs, rew, done, info = env.step(action)
             replay_buffer.add(obs, action, rew, new_obs, float(done))
