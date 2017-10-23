@@ -18,16 +18,16 @@ def model(img_in, num_actions, scope, reuse=False, layer_norm=False, keep_prob=1
         with tf.variable_scope("convnet"):
             # Comments by Fei: add max_pool layers
             out = layers.convolution2d(out, num_outputs=32, kernel_size=8, stride=4, activation_fn=tf.nn.relu)
-            out = max_pool_2x2(out)
+            #out = max_pool_2x2(out)
             out = layers.convolution2d(out, num_outputs=64, kernel_size=4, stride=2, activation_fn=tf.nn.relu)
-            out = max_pool_2x2(out)
+            #out = max_pool_2x2(out)
             out = layers.convolution2d(out, num_outputs=64, kernel_size=3, stride=1, activation_fn=tf.nn.relu)
-            out = max_pool_2x2(out)
+            #out = max_pool_2x2(out)
         conv_out = layers.flatten(out)
 
         with tf.variable_scope("action_value"):
             # Comments by Fei: change num_outputs to 1024 (was 512)
-            value_out = layers.fully_connected(conv_out, num_outputs=1024, activation_fn=None)
+            value_out = layers.fully_connected(conv_out, num_outputs=512, activation_fn=None)
             if layer_norm:
                 value_out = layer_norm_fn(value_out, relu=True)
             else:
