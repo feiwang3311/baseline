@@ -168,9 +168,9 @@ class Runner(object):
         return mb_obs, mb_states, mb_rewards, mb_masks, mb_actions, mb_values
 
 # Change for SAT, nstack changed to 1 (was 4), nsteps changed to 20, was 20, total_timesteps was 40e6
-def learn(policy, env, seed, total_timesteps=int(1e6), gamma=0.99, log_interval=1, nprocs=32, nsteps=20,
+def learn(policy, env, seed, total_timesteps=int(1e6), gamma=0.99, log_interval=100, nprocs=32, nsteps=20,
                  nstack=1, ent_coef=0.01, vf_coef=0.5, vf_fisher_coef=1.0, lr=0.25, max_grad_norm=0.5,
-                 kfac_clip=0.001, save_interval=None, lrschedule='linear'):
+                 kfac_clip=0.001, save_interval=None, lrschedule='linear', save_dir = None):
     tf.reset_default_graph()
     set_global_seeds(seed)
 
@@ -181,12 +181,16 @@ def learn(policy, env, seed, total_timesteps=int(1e6), gamma=0.99, log_interval=
                                 =nsteps, nstack=nstack, ent_coef=ent_coef, vf_coef=vf_coef, vf_fisher_coef=
                                 vf_fisher_coef, lr=lr, max_grad_norm=max_grad_norm, kfac_clip=kfac_clip,
                                 lrschedule=lrschedule)
-    if save_interval and logger.get_dir():
-        import cloudpickle
-        with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
-            fh.write(cloudpickle.dumps(make_model))
+    # Comments by Fei: change the directory to save models
+#    if save_dir is not None:
+#        with open(osp.join(save_dir, 'make_model.pkl'), 'wb') as fh:
+#            pickle.dump(make_model, fh)
+#    if save_interval and logger.get_dir():
+#        import cloudpickle
+#        with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
+#            fh.write(cloudpickle.dumps(make_model))
+    
     model = make_model()
-
     runner = Runner(env, model, nsteps=nsteps, nstack=nstack, gamma=gamma)
     nbatch = nenvs*nsteps
     tstart = time.time()
@@ -208,9 +212,14 @@ def learn(policy, env, seed, total_timesteps=int(1e6), gamma=0.99, log_interval=
             logger.record_tabular("explained_variance", float(ev))
             logger.dump_tabular()
 
-        if save_interval and (update % save_interval == 0 or update == 1) and logger.get_dir():
-            savepath = osp.join(logger.get_dir(), 'checkpoint%.5i'%update)
-            print('Saving to', savepath)
+        # Comments by Fei: change the directory to save models
+        if save_interval and (update % save_interval == 0 or update == 1) and save_dir:
+            savepath = osp.join(save_dir, 'checkpoint%.5i'%update)
+            print('Saving to ', savepath)
             model.save(savepath)
+#        if save_interval and (update % save_interval == 0 or update == 1) and logger.get_dir():
+#            savepath = osp.join(logger.get_dir(), 'checkpoint%.5i'%update)
+#            print('Saving to', savepath)
+#            model.save(savepath)
 
     env.close()
