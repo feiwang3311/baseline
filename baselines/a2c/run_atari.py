@@ -38,13 +38,13 @@ def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--env', help='environment ID', default='gym_sat_Env-v0') # Change for SAT: use gym_sat_Env-v0 was BreakoutNoFrameskip-v4
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
-    parser.add_argument('--policy', help='Policy architecture', choices=['cnn', 'lstm', 'lnlstm', 'dnn'], default='dnn') # Change for SAT: use dnn as default
-    parser.add_argument('--lrschedule', help='Learning rate schedule', choices=['constant', 'linear'], default='constant')
+    parser.add_argument('--policy', help='Policy architecture', choices=['cnn', 'lstm', 'lnlstm', 'dnn'], default='cnn') # Change for SAT: use dnn as default
+    parser.add_argument('--lrschedule', help='Learning rate schedule', choices=['constant', 'linear'], default='linear')
     parser.add_argument('--million_frames', help='How many frames to train (/ 1e6). '
-        'This number gets divided by 4 due to frameskip', type=int, default=40) # Change for SAT: use 1, was 40
+        'This number gets divided by 4 due to frameskip', type=int, default=1) # Change for SAT: use 1, was 40
     args = parser.parse_args()
     train(args.env, num_frames=1e6 * args.million_frames, seed=args.seed, 
-        policy=args.policy, lrschedule=args.lrschedule, num_cpu=8) # Change for SAT , was 16
+        policy=args.policy, lrschedule=args.lrschedule, num_cpu=16) 
 
 if __name__ == '__main__':
     main()
