@@ -1,6 +1,6 @@
 import os.path as osp
 import time
-import joblib
+import pickle
 import numpy as np
 import tensorflow as tf
 from baselines import logger
@@ -16,7 +16,7 @@ from baselines.acktr import kfac
 class Model(object):
 
     def __init__(self, policy, ob_space, ac_space, nenvs,total_timesteps, nprocs=32, nsteps=20,
-                 nstack=4, ent_coef=0.01, vf_coef=0.5, vf_fisher_coef=1.0, lr=0.25, max_grad_norm=0.5,
+                 nstack=1, ent_coef=0.01, vf_coef=0.5, vf_fisher_coef=1.0, lr=0.25, max_grad_norm=0.5,
                  kfac_clip=0.001, lrschedule='linear'):
         config = tf.ConfigProto(allow_soft_placement=True,
                                 intra_op_parallelism_threads=nprocs,
@@ -25,14 +25,14 @@ class Model(object):
         self.sess = sess = tf.Session(config=config)
         nact = ac_space.n
         nbatch = nenvs * nsteps
-        A = tf.placeholder(tf.int32, [nbatch])
-        ADV = tf.placeholder(tf.float32, [nbatch])
-        R = tf.placeholder(tf.float32, [nbatch])
-        PG_LR = tf.placeholder(tf.float32, [])
-        VF_LR = tf.placeholder(tf.float32, [])
+        A = tf.placeholder(tf.int32, [nbatch]) # Comments by Fei: this is the array of actions for the batch of states
+        ADV = tf.placeholder(tf.float32, [nbatch]) # Comments by Fei: this is the array of advantages for the batch of states
+        R = tf.placeholder(tf.float32, [nbatch]) # Comments by Fei: this is the array of rewards for the batch of states
+        PG_LR = tf.placeholder(tf.float32, []) # Comments by Fei: learning rate of Policy gradient
+        VF_LR = tf.placeholder(tf.float32, []) # Comments by Fei: learning rate of value function
 
-        self.model = step_model = policy(sess, ob_space, ac_space, nenvs, 1, nstack, reuse=False)
-        self.model2 = train_model = policy(sess, ob_space, ac_space, nenvs, nsteps, nstack, reuse=True)
+        self.model = step_model = policy(sess, ob_space, ac_space, nenvs, 1, nstack, reuse=False) # Comments by Fei: used for roll out
+        self.model2 = train_model = policy(sess, ob_space, ac_space, nenvs, nsteps, nstack, reuse=True) # Comments by Fei: same neural net, used for train
 
         logpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model.pi, labels=A)
         self.logits = logits = train_model.pi
@@ -51,7 +51,7 @@ class Model(object):
         self.vf_fisher = vf_fisher_loss = - vf_fisher_coef*tf.reduce_mean(tf.pow(train_model.vf - tf.stop_gradient(sample_net), 2))
         self.joint_fisher = joint_fisher_loss = pg_fisher_loss + vf_fisher_loss
 
-        self.params=params = find_trainable_variables("model")
+        self.params=params = find_trainable_variables("model") # Comments by Fei: Need to find out where "model" is used as variable scope
 
         self.grads_check = grads = tf.gradients(train_loss,params)
 
@@ -81,17 +81,18 @@ class Model(object):
             )
             return policy_loss, value_loss, policy_entropy
 
-        def save(save_path):
+        def save(save_path): # Comments by Fei: changed to pickle dump because cuda and mctesla machine didn't install joblib
             ps = sess.run(params)
-            joblib.dump(ps, save_path)
-
-        def load(load_path):
-            loaded_params = joblib.load(load_path)
+            with open(save_path, "wb") as file:
+                pickle.dump(ps, file)
+            
+        def load(load_path): # Comments by Fei: changed to pickle load because cuda and mctesla machine didn't install joblib
+            with open(load_path, "rb") as file:
+                loaded_params = pickle.load(file)
             restores = []
             for p, loaded_p in zip(params, loaded_params):
                 restores.append(p.assign(loaded_p))
-            sess.run(restores)
-
+            ps = sess.run(restores)
 
 
         self.train = train
@@ -112,7 +113,7 @@ class Runner(object):
         nh, nw, nc = env.observation_space.shape
         nenv = env.num_envs
         self.batch_ob_shape = (nenv*nsteps, nh, nw, nc*nstack)
-        self.obs = np.zeros((nenv, nh, nw, nc*nstack), dtype=np.uint8)
+        self.obs = np.zeros((nenv, nh, nw, nc*nstack), dtype=np.int8) # Comments by Fei: be aware, self.obs is only nenv! Changes for SAT: use int8 (not uint8)
         obs = env.reset()
         self.update_obs(obs)
         self.gamma = gamma
@@ -142,8 +143,8 @@ class Runner(object):
             self.update_obs(obs)
             mb_rewards.append(rewards)
         mb_dones.append(self.dones)
-        #batch of steps to batch of rollouts
-        mb_obs = np.asarray(mb_obs, dtype=np.uint8).swapaxes(1, 0).reshape(self.batch_ob_shape)
+        #batch of steps to batch of rollout
+        mb_obs = np.asarray(mb_obs, dtype=np.int8).swapaxes(1, 0).reshape(self.batch_ob_shape) # Comments by Fei: need to change uint8 to int8!!
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32).swapaxes(1, 0)
         mb_actions = np.asarray(mb_actions, dtype=np.int32).swapaxes(1, 0)
         mb_values = np.asarray(mb_values, dtype=np.float32).swapaxes(1, 0)
@@ -166,8 +167,9 @@ class Runner(object):
         mb_masks = mb_masks.flatten()
         return mb_obs, mb_states, mb_rewards, mb_masks, mb_actions, mb_values
 
-def learn(policy, env, seed, total_timesteps=int(40e6), gamma=0.99, log_interval=1, nprocs=32, nsteps=20,
-                 nstack=4, ent_coef=0.01, vf_coef=0.5, vf_fisher_coef=1.0, lr=0.25, max_grad_norm=0.5,
+# Change for SAT, nstack changed to 1 (was 4), nsteps changed to 20, was 20, total_timesteps was 40e6
+def learn(policy, env, seed, total_timesteps=int(1e6), gamma=0.99, log_interval=1, nprocs=32, nsteps=20,
+                 nstack=1, ent_coef=0.01, vf_coef=0.5, vf_fisher_coef=1.0, lr=0.25, max_grad_norm=0.5,
                  kfac_clip=0.001, save_interval=None, lrschedule='linear'):
     tf.reset_default_graph()
     set_global_seeds(seed)

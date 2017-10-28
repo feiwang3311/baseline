@@ -29,8 +29,7 @@ class Model(object):
         nact = ac_space.n
         nbatch = nenvs*nsteps
 
-        writter = tf.summary.FileWriter("/tmp/a2c_demo/1") # Change for SAT: this is to use tensorBoard
-
+       # writter = tf.summary.FileWriter("/tmp/a2c_demo/1") # Change for SAT: this is to use tensorBoard
 
         A = tf.placeholder(tf.int32, [nbatch]) # Comments by Fei: this must be the action
         ADV = tf.placeholder(tf.float32, [nbatch]) # Comments by Fei: this must be the advantage 
@@ -107,14 +106,6 @@ class Model(object):
             with tf.name_scope("accuracy"):
                 correct_prediction = tf.equal(tf.argmax(self.train_model.pi, 1), tf.argmax(y_, 1))
                 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-            # also need to supervisely train the step_model network
-            with tf.name_scope("loss_step"):
-                cross_entropy_step = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels = y_, logits = self.step_model.pi))
-            with tf.name_scope("train_step"):
-                train_step_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy_step)
-            with tf.name_scope("accuracy_step"):
-                correct_prediction_step = tf.equal(tf.argmax(self.step_model.pi, 1), tf.argmax(y_, 1))
-                accuracy_step = tf.reduce_mean(tf.cast(correct_prediction_step, tf.float32))
             
             sess.run(tf.global_variables_initializer())
             # supervised training cycle
@@ -163,7 +154,6 @@ class Runner(object):
         # Do frame-stacking here instead of the FrameStack wrapper to reduce
         # IPC overhead
         self.obs = np.roll(self.obs, shift=-1, axis=3)
-        # self.obs[:, :, :, -1] = obs # 
         self.obs[:, :, :, -1] = obs[:, :, :, 0] 
 
     def run(self):
@@ -185,7 +175,7 @@ class Runner(object):
             mb_rewards.append(rewards) # Comments by Fei: finally will be nsteps * nenv
         mb_dones.append(self.dones) # Comments by Fei: finally will be (nsteps+1) * nenv
         #batch of steps to batch of rollouts
-        mb_obs = np.asarray(mb_obs, dtype=np.uint8).swapaxes(1, 0).reshape(self.batch_ob_shape) # Comments by Fei: (nenv*nsteps, nh, nw, nc*nstack)
+        mb_obs = np.asarray(mb_obs, dtype=np.int8).swapaxes(1, 0).reshape(self.batch_ob_shape) # Comments by Fei: (nenv*nsteps, nh, nw, nc*nstack), change uint8 to int8!!
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32).swapaxes(1, 0) # Comments by Fei: nenv * nsteps
         mb_actions = np.asarray(mb_actions, dtype=np.int32).swapaxes(1, 0) # Comments by Fei: nenv * nsteps
         mb_values = np.asarray(mb_values, dtype=np.float32).swapaxes(1, 0) # Comments by Fei: nenv * nsteps
@@ -230,8 +220,8 @@ class Runner(object):
             if not mask.any(): break
         return np.mean(sum_rewards)
 
-# Change for SAT, nstack changed to 1 (was 4), nsteps changed to 20, was 5
-def learn(policy, env, seed, nsteps=20, nstack=1, total_timesteps=int(80e6), vf_coef=0.5, ent_coef=0.01, max_grad_norm=0.5, lr=7e-4, lrschedule='linear', epsilon=1e-5, alpha=0.99, gamma=0.99, log_interval=100):
+# Change for SAT, nstack changed to 1 (was 4), nsteps changed to 20, was 5, total_timesteps was 80e6
+def learn(policy, env, seed, nsteps=20, nstack=1, total_timesteps=int(1e6), vf_coef=0.5, ent_coef=0.01, max_grad_norm=0.5, lr=7e-4, lrschedule='linear', epsilon=1e-5, alpha=0.99, gamma=0.99, log_interval=100):
     tf.reset_default_graph()
     set_global_seeds(seed)
 
@@ -245,7 +235,7 @@ def learn(policy, env, seed, nsteps=20, nstack=1, total_timesteps=int(80e6), vf_
 
     # add supervised learning here:
     # model.super_train()
-    model.load("params_pickle/params0")
+    # model.load("params_pickle/params0")
 
     nbatch = nenvs*nsteps
     tstart = time.time()

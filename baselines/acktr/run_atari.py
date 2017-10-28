@@ -9,7 +9,7 @@ from baselines.common.atari_wrappers import wrap_deepmind
 from baselines.acktr.policies import CnnPolicy
 
 def train(env_id, num_frames, seed, num_cpu):
-    num_timesteps = int(num_frames / 4 * 1.1) 
+    num_timesteps = int(num_frames * 1.1) # Change for SAT: no need to divide by 4
     def make_env(rank):
         def _thunk():
             env = gym.make(env_id)
@@ -17,7 +17,7 @@ def train(env_id, num_frames, seed, num_cpu):
             if logger.get_dir():
                 env = bench.Monitor(env, os.path.join(logger.get_dir(), "{}.monitor.json".format(rank)))
             gym.logger.setLevel(logging.WARN)
-            return wrap_deepmind(env)
+            return env # Change for SAT: wrap_deepmind(env)
         return _thunk
     set_global_seeds(seed)
     env = SubprocVecEnv([make_env(i) for i in range(num_cpu)])
@@ -28,10 +28,10 @@ def train(env_id, num_frames, seed, num_cpu):
 def main():
     import argparse
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--env', help='environment ID', default='BreakoutNoFrameskip-v4')
+    parser.add_argument('--env', help='environment ID', default='gym_sat_Env-v0') # Change for SAT: use gym_sat_Env-v0 was BreakoutNoFrameskip-v4
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
     parser.add_argument('--million_frames', help='How many frames to train (/ 1e6). '
-        'This number gets divided by 4 due to frameskip', type=int, default=40)
+        'This number gets divided by 4 due to frameskip', type=int, default=1) # Change for SAT: use 1, was 40
     args = parser.parse_args()    
     train(args.env, num_frames=1e6 * args.million_frames, seed=args.seed, num_cpu=32)
 

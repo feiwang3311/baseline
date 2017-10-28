@@ -97,17 +97,27 @@ class CnnPolicy(object):
         nact = ac_space.n
         X = tf.placeholder(tf.int8, ob_shape) #obs Change for SAT: SAT input is of type int8!
         with tf.variable_scope("model", reuse=reuse):
-            h = conv(tf.cast(X, tf.float32), 'c1', nf=8, rf=4, stride=1, init_scale=np.sqrt(2)) # Change for SAT, don't divide input by 255. nf was 32, rf was 8
+            h = conv(tf.cast(X, tf.float32), 'c1', nf=32, rf=8, stride=1, init_scale=np.sqrt(2)) # Change for SAT, don't divide input by 255.
             # h = conv(tf.cast(X, tf.float32)/255., 'c1', nf=32, rf=8, stride=4, init_scale=np.sqrt(2)) # Change for SAT, don't divide input by 255.
-            h2 = conv(h, 'c2', nf=16, rf=4, stride=2, init_scale=np.sqrt(2)) # Change for SAT. rf was 64
-            h3 = conv(h2, 'c3', nf=16, rf=3, stride=1, init_scale=np.sqrt(2)) # Change for SAT rf was 64
+            h2 = conv(h, 'c2', nf=64, rf=4, stride=1, init_scale=np.sqrt(2)) # Change for SAT. stride was 2
+            h3 = conv(h2, 'c3', nf=64, rf=3, stride=1, init_scale=np.sqrt(2)) 
             h3 = conv_to_fc(h3)
             h4 = fc(h3, 'fc1', nh=512, init_scale=np.sqrt(2))
             pi = fc(h4, 'pi', nact, act=lambda x:x)
             vf = fc(h4, 'v', 1, act=lambda x:x)
 
         v0 = vf[:, 0]
-        a0 = sample(pi)
+        # Comments by Fei: filter invalid actions!
+        pos = tf.reduce_max(X, axis = 1) # Comments by Fei: get 1 if the postive variable exists in any clauses, otherwise 0
+        neg = tf.reduce_min(X, axis = 1) # Comments by Fei: get -1 if the negative variables exists in any clauses, otherwise 0
+        ind = tf.concat([pos, neg], axis = 2) # Comments by Fei: get (1, -1) if this var is present, (1, 0) if only as positive, (0, -1) if only as negative
+        ind_flat = tf.reshape(ind, [-1, nw * 2]) # Comments by Fei: this is nbatch * nact, with 0 values labeling non_valid actions, 1 or -1 for other
+        ind_flat_filter = tf.abs(tf.cast(ind_flat, tf.float32)) # Comments by Fei: this is nbatch * nact, with 0 values labeling non_valid actions, 1 for other
+        pi_min = tf.reduce_min(pi, axis = 1)
+        pi_adjust = pi - tf.expand_dims(pi_min, axis = 1) # Comments by Fei: make sure the maximal values are positive
+        pi_filter = pi_adjust * ind_flat_filter # Comments by Fei: zero-fy non-valid values, don't change valid values
+        pi_filter_adjust = pi_filter + tf.expand_dims(pi_min, axis = 1) # Comments by Fei: adjust back (to keep the valid values unchanged)
+        a0 = sample(pi_filter_adjust)
         self.initial_state = [] #not stateful
 
         def step(ob, *_args, **_kwargs):
