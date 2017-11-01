@@ -1,3 +1,4 @@
+
 import os, logging, time, pickle
 import numpy as np
 import tensorflow as tf
@@ -64,7 +65,6 @@ def self_play(args, scope, cact, num_mcts, nrepeat, nbatch = 1, nstack = 1):
                 # this is the initial random parameter, let's save it here
                 ps = sess.run(params)
                 save(ps, os.path.join(args.save_dir, "model-0"))
-
         minisat = None
         pp.close()
         # then this thread must not pre-terminate before any other threads that use server!
