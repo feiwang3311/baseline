@@ -1,8 +1,6 @@
-
 import os, logging, time, pickle
 import numpy as np
 import tensorflow as tf
-import math
 import tensorflow.contrib.layers as layers
 from utils import discount_with_dones, Scheduler, make_path, find_trainable_variables, cat_entropy, mse, conv, fc, conv_to_fc
 from models import model2
@@ -281,8 +279,8 @@ def main():
     parser.add_argument('--dump_dir', help="where to save (state, Pi, num_step) for SL", default = "SLRaw")
     parser.add_argument('--dump_file', help="what is the filename to save (state, Pi, num_step) for SL", default="saveSL")
 
-    parser.add_argument('--num_mcts', type = int, help="what is the size for each MCTS tree", default=20)
-    parser.add_argument('--nrepeat', type = int, help="how many times to repeat a SAT problem", default=20)
+    parser.add_argument('--num_mcts', type = int, help="what is the size for each MCTS tree", default=4)
+    parser.add_argument('--nrepeat', type = int, help="how many times to repeat a SAT problem", default=10)
     parser.add_argument('--cact', type = float, help="what is the hypoparameter for exploration in MCTS", default=1.0)
 
     args = parser.parse_args()
