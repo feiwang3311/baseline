@@ -39,11 +39,28 @@ def analyze_Pi_graph_dump(Pi_node, sl_Buffer, standard):
     else: score = 0
     sl_Buffer.add(Pi_node.state, Pi_node.Pi, score, Pi_node.repeat)
 
+# this function is a hack that is no longer needed
+def fix_invalid(Pi, isValid, file_no):
+    """
+        Pi:      the strengthened probibality array for stepping
+        isValid: the array marking valid steps
+        this function modify and return Pi, to make sure that all non-zero Pi values are for valid steps
+    """
+    n = isValid.shape[0]
+    v = isValid.sum()
+    total_valid = (isValid * Pi).sum()
+    if total_valid < 0.999999: # errous state, report info for debugging
+        print("ERROR: total_valid is only {} at file_no {}".format(total_valid, file_no))
+        # fix the state
+        Pi = (Pi + (1.0 - total_valid) / v) * isValid
+    return Pi
+
 class Pi_struct(object):
-    def __init__(self, size, repeat, level, parent = None):
+    def __init__(self, size, repeat, level, file_no, parent = None):
         self.size = size
         self.repeat = repeat
         self.level = level
+        self.file_no = file_no
         self.children = {}
         self.next = 0
         self.evaluated = False
@@ -53,13 +70,33 @@ class Pi_struct(object):
         self.isValid = np.reshape(np.any(state, axis = 0), [self.size,])
         state_2d = np.reshape(state, [-1, state.shape[1] * state.shape[2]])
         self.state = sp.csc_matrix(state_2d)
-    def add_Pi(self, Pi):
-        self.Pi = np.copy(Pi)
-        action = np.random.choice(range(self.size), self.repeat, p = Pi) # random select actions based on Pi, for nrepeat times
+    def add_counts(self, counts):
+        assert counts.sum() == (counts * self.isValid).sum(), "count: " + str(counts) + " is invalid: " + str(self.isValid)
+        self.Pi = get_PI(counts, 0.9) # TODO: optimize on tau, which is a hyper parameter
+        assert (self.isValid * self.Pi).sum() > 0.999999, "Pi: " + str(self.Pi) + " is invalid: " + str(self.isValid)
+        action = np.random.choice(range(self.size), self.repeat, p = self.Pi) # random select actions based on Pi
         self.nrepeats = get_nrepeat_count(action, self.size)
+        assert self.repeat == (self.nrepeats * self.isValid).sum(), "nrepeats: " + str(self.nrepeats) + " is invalid: " + str(self.isValid)
         for i in range(self.size):
             if self.nrepeats[i] > 0.5:
-                self.children[i] = Pi_struct(self.size, self.nrepeats[i], self.level+1, parent = self)
+                self.children[i] = Pi_struct(self.size, self.nrepeats[i], self.level + 1, self.file_no, parent = self)
+        self.evaluated = True
+    # Deprecated
+    def add_Pi(self, Pi, counts):
+        assert counts.sum() == (counts * self.isValid).sum(), "count: " + str(counts) + " is invalid: " + str(self.isValid)
+        self.Pi = np.copy(Pi)
+        # hack: sometimes Pi has non-zero values in invalid actions, which is a problem (possibly bug in simulation process)
+        # Because it happens in-frequently, for now, I try to fix Pi by isValid (pushing non-zero invalid Pi value to other valid positions)
+        # also print something in the standoutput so that I know it happened, and hope to collect more info for debugging
+        self.Pi = fix_invalid(self.Pi, self.isValid, self.file_no)
+
+        action = np.random.choice(range(self.size), self.repeat, p = Pi) # random select actions based on Pi, for nrepeat times
+        self.nrepeats = get_nrepeat_count(action, self.size)
+        # same hack should be implemented for nrepeats. OR at least an assert check here to make sure that all nrepeats non-zero are valid!!
+        assert self.repeat == (self.nrepeats * self.isValid).sum(), "all non-zero nrepeats must be valid"
+        for i in range(self.size):
+            if self.nrepeats[i] > 0.5:
+                self.children[i] = Pi_struct(self.size, self.nrepeats[i], self.level+1, self.file_no, parent = self)
         self.evaluated = True
     def get_next(self):
         while self.next < self.size and (self.nrepeats[self.next] < 0.5 or not self.isValid[self.next]):
@@ -86,7 +123,7 @@ class MCT(object):
             nrepeat:     the number of repeats that we want to self_play with this file problem (suggest 100)
         """
         self.env = sat(file_path, max_clause = max_clause1, max_var = max_var1) 
-        self.Pi_current = self.Pi_root = Pi_struct(max_var1 * 2, nrepeat, 0)
+        self.Pi_current = self.Pi_root = Pi_struct(max_var1 * 2, nrepeat, 0, file_no)
         self.state = self.env.resetAt(file_no) ## all reset call should use the function with file_no as parameter, to make sure that it always uses the same file
         self.Pi_current.add_state(self.state)
         self.min_step = 10000000
@@ -115,12 +152,10 @@ class MCT(object):
                         else:
                             self.phase = False
                     self.state, needEnv, needSim = self.env.simulate(softmax(pi_array), v_value)
-                counts = self.env.get_visit_count()
-                Pi = get_PI(counts, 0.9)      # TODO: decide how to control tau later
-                self.Pi_current.add_Pi(Pi)    # this function also establish the nrepeats for this Pi, and set up the children dictionary
+                self.Pi_current.add_counts(self.env.get_visit_count())
 
             next_act = self.Pi_current.get_next() 
-            assert next_act >= 0, "next_act is neg, but this is actually never happening, because the set_next() method took care of it"
+            assert next_act >= 0, "next_act is neg in file " + str(self.file_no)
             isDone, self.state = self.env.step(next_act) # there is a guarantee that this next_act is valid
             if isDone:
                 print("step {} to DONE+++++++++++++++++++++++++++++++++++++++++++++++++++++".format(next_act))
@@ -138,4 +173,3 @@ class MCT(object):
     def write_data_to_buffer(self, sl_Buffer):
         standard = (self.min_step, self.Pi_root.score / self.Pi_root.repeat, self.max_step)
         analyze_Pi_graph_dump(self.Pi_root, sl_Buffer, standard)
-
