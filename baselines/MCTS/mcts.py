@@ -32,7 +32,7 @@ def get_PI(counts, tau):
     Pi = Pi / np.sum(Pi)
     return Pi
 
-def is_step_valid_in_state(state, step):
+def is_step_valid_in_state(state, step): # NO LONGER USED
     # state is max_clause * max_var * 2 and step is in range(max_var*2)
     # this function returns true if step is valid in state ()
     valid = np.any(state, axis = 0) # valid is now max_var * 2
@@ -142,8 +142,7 @@ def self_play(args, scope, nrepeat, nbatch = 1, nstack = 1):
             while True:
                 if not Pi_current.evaluated:
                     print("simulation -----------------------------------------------{} at level {}".format(Pi_current.repeat, Pi_current.level))
-                    pi, v0 = sess.run([p, v], feed_dict = {X: state[None]})
-                    state, needEnv, needSim = env.simulate(softmax(pi[0]), v0[0]) # have to use pi[0] because simulate only takes 1d array
+                    needEnv = True
                     while needEnv or needSim:
                     	if needEnv:
                     		pi, v0 = sess.run([p, v], feed_dict = {X: state[None]})
