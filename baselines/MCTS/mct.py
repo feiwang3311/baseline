@@ -71,12 +71,18 @@ class Pi_struct(object):
         state_2d = np.reshape(state, [-1, state.shape[1] * state.shape[2]])
         self.state = sp.csc_matrix(state_2d)
     def add_counts(self, counts):
-        assert counts.sum() == (counts * self.isValid).sum(), "count: " + str(counts) + " is invalid: " + str(self.isValid)
-        self.Pi = get_PI(counts, 0.9) # TODO: optimize on tau, which is a hyper parameter
-        assert (self.isValid * self.Pi).sum() > 0.999999, "Pi: " + str(self.Pi) + " is invalid: " + str(self.isValid)
-        action = np.random.choice(range(self.size), self.repeat, p = self.Pi) # random select actions based on Pi
+        assert counts.sum() == (counts * self.isValid).sum(), "count: " + str(counts) + \
+        " is invalid: " + str(self.isValid) + " in file " + str(self.file_no)
+        # TODO: optimize on tau, which is a hyper parameter
+        self.Pi = get_PI(counts, 0.9) 
+        assert (self.isValid * self.Pi).sum() > 0.999999, "Pi: " + str(self.Pi) + \
+        " is invalid: " + str(self.isValid) + " in file " + str(self.file_no)
+        # random select actions based on Pi
+        action = np.random.choice(range(self.size), self.repeat, p = self.Pi) 
         self.nrepeats = get_nrepeat_count(action, self.size)
-        assert self.repeat == (self.nrepeats * self.isValid).sum(), "nrepeats: " + str(self.nrepeats) + " is invalid: " + str(self.isValid)
+        assert self.repeat == (self.nrepeats * self.isValid).sum(), "nrepeats: " + str(self.nrepeats) + \
+        " is invalid: " + str(self.isValid) + " in file " + str(self.file_no)
+        # create children of this Pi_struct
         for i in range(self.size):
             if self.nrepeats[i] > 0.5:
                 self.children[i] = Pi_struct(self.size, self.nrepeats[i], self.level + 1, self.file_no, parent = self)
