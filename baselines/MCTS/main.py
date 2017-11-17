@@ -6,6 +6,7 @@ from models import model2, load, save
 import scipy.sparse as sp
 from sl_buffer import slBuffer
 from mct import MCT
+from status import Status
 
 """
     c_act (exploration parameter of MCTS) and num_mcts (the full size of MCTS tree) are determined in minisat.core.Const.h
@@ -76,10 +77,10 @@ def self_play(args, scope, status_track):
             pickle.dump(sl_Buffer, sl_file, -1)
 
 """
-	this function does supervised training
+    this function does supervised training
 """
 def super_train(args, scope, status_track):
-	model_dir = status_track.get_sl_starter()
+    model_dir = status_track.get_sl_starter()
 
     nh = args.max_clause
     nw = args.max_var
@@ -119,7 +120,7 @@ def super_train(args, scope, status_track):
             feed_dict = { X: batch[0], Y: batch[1], Z: batch[2] }
             sess.run(train_step, feed_dict)
             if i > 0 and i % args.sl_ncheckpoint == 0: 
-            	new_model_dir = status_track.generate_new_model()
+                new_model_dir = status_track.generate_new_model()
                 print("checkpoint model {}".format(new_model_dir))
                 ps = sess.run(params)
                 save(ps, os.path.join(args.save_dir, new_model_dir))
@@ -128,15 +129,15 @@ def super_train(args, scope, status_track):
     this function evaluates all unevaluated model, as indicated in the status_track object
 """
 def model_ev(args, scope, status_track):	
-	# the convention is that model_ev() run all files in train_path
-	# there may be a few number of unevaluated models, and this function evaluate them all
-	
-	model_dir = status_track.which_model_to_evaluate()
-	while model_dir is not None:
+    # the convention is that model_ev() run all files in train_path
+    # there may be a few number of unevaluated models, and this function evaluate them all
+    
+    model_dir = status_track.which_model_to_evaluate()
+    while model_dir is not None:
 
         MCTList = []
         for i in range(args.nbatch):
-        	# tau is small for testing, and evaluation only solve a problem once.
+            # tau is small for testing, and evaluation only solve a problem once.
             MCTList.append(MCT(args.train_path, i, args.max_clause, args.max_var, 1, tau = lambda x: 0.001)) 
         nh = args.max_clause
         nw = args.max_var
@@ -150,7 +151,7 @@ def model_ev(args, scope, status_track):
         # within a tensorflow session, run MCT objects with model
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
-	        assert (args.save_dir is not None) and (model_dir is not None), "no model to evaluate!"
+            assert (args.save_dir is not None) and (model_dir is not None), "no model to evaluate!"
             sess.run(load(params, os.path.join(args.save_dir, model_dir)))
             print("loaded model {} at dir {} for evaluation".format(args.save_dir, model_dir))
 
@@ -159,12 +160,12 @@ def model_ev(args, scope, status_track):
             v_array = np.zeros((args.nbatch,), dtype = np.float32)
             needMore = np.ones((args.nbatch,), dtype = np.bool)
             next_file_index = args.nbatch
-            assert (next_file_index < args.n_train_files), "this is a convention"
-            all_files_done = False
+            assert (next_file_index <= args.n_train_files), "this is a convention"
+            all_files_done = next_file_index == args.n_train_files
             performance = np.zeros(args.n_train_files)
             dummy = []
             for _ in range(args.nbatch):
-            	dummy.append(np.zeros((nh, nw, nc), dtype = np.float32))
+                dummy.append(np.zeros((nh, nw, nc), dtype = np.float32))
             while np.any(needMore):
                 states = []
                 for i in range(args.nbatch):
@@ -239,15 +240,14 @@ def main():
         status_track.start_with(os.path.join(args.save_dir, args.status_file))
     else: # otherwise the initial values in Status object fits with the default values here;
         status_track.init_with(args.best_model, args.n_start, [], 0, os.path.join(args.save_dir, args.status_file)) 
-
-
+    return
     # the convention here is that n_files == nbatch for self_play!!! OR we self_play one batch only
-    self_play(args, scope="mcts", status_track)
+    self_play(args, "mcts", status_track)
 
-    super_train(args, scope="supervised", status_track)
+    super_train(args, "supervised", status_track)
 
     # the convention here is that evaluation looks at each training file once, and the number of total training files is larger than args.nbatch
-    model_ev(args, scope = "ev", status_track)
+    model_ev(args, "ev", status_track)
 
 if __name__ == '__main__':
     main()

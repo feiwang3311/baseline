@@ -21,21 +21,26 @@ class Status(object):
 		assert self.best_model <= len(self.ev_hist), "self.best_model should be less than or equal to len(self.ev_hist)"
 		assert len(self.ev_hist) <= self.length_hist, "self.ev_hist should have length less than or equal to self.length_hist"
 
-	def write_to_disc(self):
+	def write_to_disc(self, update_hist = False):
 		"""
 			this method write the model to disc at self.status_file (every change should be updated) 
 			TODO : optimize so that the vast content of ev_hist is not unnecessarily updated
 		"""
 		with open(self.status_file, "wb") as f:
-			pickle.dump((self.best_model, self.n_start, self.ev_hist, self.length_hist, self.status_file), f)
+			pickle.dump((self.best_model, self.n_start, self.length_hist, self.status_file), f)
+		if update_hist:
+			with open(self.status_file + ".hist", "wb") as d:
+				pickle.dump(self.ev_hist, d)
 
 	def start_with(self, status_file):
 		"""
 			this method fill the fields of Status object with information stored in a status pickle dump
 		"""
 		with open(status_file, "rb") as f:
-			self.best_model, self.n_start, self.ev_hist, self.length_hist, self.status_file = pickle.load(f)
-		self_check()
+			self.best_model, self.n_start, self.length_hist, self.status_file = pickle.load(f)
+		with open(status_file + ".hist", "rb") as d:
+			self.ev_hist = pickle.load(d)
+		self.self_check()
 	
 	def init_with(self, best_model, n_start, ev_hist, length_hist, status_file):
 		"""
@@ -46,8 +51,8 @@ class Status(object):
 		self.ev_hist = ev_hist
 		self.length_hist = length_hist
 		self.status_file = status_file
-		self_check()
-		write_to_disc()
+		self.self_check()
+		self.write_to_disc(update_hist = True)
 
 	def get_model_dir(self):
 		"""
@@ -64,7 +69,7 @@ class Status(object):
 		indexes = np.asarray(range(self.n_start, self.n_start + nbatch)) % ntotal
 		self.n_start += nbatch
 		self.n_start %= ntotal
-		write_to_disc()
+		self.write_to_disc()
 		return indexes
 
 	def get_sl_starter(self):
@@ -80,7 +85,7 @@ class Status(object):
 			it returns the new model dir name for this new model
 		"""
 		self.length_hist += 1
-		write_to_disc()
+		self.write_to_disc()
 		return "model-" + str(self.length_hist - 1)
 
 	def which_model_to_evaluate(self):
@@ -103,9 +108,9 @@ class Status(object):
 			assert len(self.ev_hist) == 1, "this must be the first model evaluated"
 			self.best_model = 0
 		else:
-			if better_than(performance, self.ev_hist[self.best_model]):
+			if self.better_than(performance, self.ev_hist[self.best_model]):
 				self.best_model = len(self.ev_hist) - 1
-		write_to_disc()
+		self.write_to_disc(update_hist = True)
 
 	def better_than(per1, per2):
 		if (per1 <= per2).sum() >= per1.shape[0] * 0.95 and np.mean(per1) < np.mean(per2) * 0.99:
