@@ -1,9 +1,16 @@
+import os, time, pickle
 import numpy as np
 import tensorflow as tf
 import math
 import tensorflow.contrib.layers as layers
 from utils import conv, fc, conv_to_fc
 
+""" TODO: does it make sense to encapsulate model as a class??
+"""
+
+"""
+    this model function takes input of nbatch * max_clause * max_var * 1, values are 1 or -1 or 0
+"""
 def model(X, nact, scope, reuse=False, layer_norm=False):
     with tf.variable_scope(scope, reuse=reuse):
         h = conv(tf.cast(X, tf.float32), 'c1', nf=32, rf=8, stride=1, init_scale=np.sqrt(2)) # TODO: when upgraded to batch run, add layer_norm to conv
@@ -15,7 +22,6 @@ def model(X, nact, scope, reuse=False, layer_norm=False):
         pi = fc(h4, 'pi', nact, act=lambda x: x)
         vf = fc(h4, 'v', 1, act=lambda x: tf.tanh(x))
 
-        # TODO: if change SAT to boolean type, modify the filter as well
         pos = tf.reduce_max(X, axis = 1) # Comments by Fei: get 1 if the postive variable exists in any clauses, otherwise 0
         neg = tf.reduce_min(X, axis = 1) # Comments by Fei: get -1 if the negative variables exists in any clauses, otherwise 0
         ind = tf.concat([pos, neg], axis = 2) # Comments by Fei: get (1, -1) if this var is present, (1, 0) if only as positive, (0, -1) if only as negative
@@ -25,6 +31,9 @@ def model(X, nact, scope, reuse=False, layer_norm=False):
         pi_fil = pi + (ind_flat_filter - tf.ones(tf.shape(ind_flat_filter))) * 1e32
     return pi_fil, vf[:, 0]
 
+"""
+    this model function takes input of nbatch * max_clause * max_var * 2, values are 1 or 0 (can be of type boolean)
+"""
 def model2(X, nact, scope, reuse = False, layer_norm = False):
     # X should be nbatch * ncol * nrow * 2 (boolean)
     with tf.variable_scope(scope, reuse = reuse):
@@ -42,3 +51,24 @@ def model2(X, nact, scope, reuse = False, layer_norm = False):
         valid_flat = tf.reshape(valid, [-1, nact]) # this is the equavalent of "ind_flat_filter"
         pi_fil = pi + (valid_flat - tf.ones(tf.shape(valid_flat))) * 1e32
     return pi_fil, vf[:, 0]
+
+"""
+    load function returns a list of tensorflow actions, that needs to be ran in a session
+"""
+def load(params, load_path):
+    load_file = os.path.join(load_path, "saved")
+    with open(load_file, "rb") as fileToload:
+        loaded_params = pickle.load(fileToload)
+    restores = []
+    for p, loaded_p in zip(params, loaded_params):
+        restores.append(p.assign(loaded_p))
+    return restores
+
+"""
+    save function saves the parameters as a side effect
+"""
+def save(ps, save_path):
+    os.makedirs(save_path, exist_ok = True)
+    save_file = os.path.join(save_path, "saved")
+    with open(save_file, "wb") as fileToSave:
+        pickle.dump(ps, fileToSave)
