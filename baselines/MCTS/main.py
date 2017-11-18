@@ -131,31 +131,32 @@ def super_train(args, scope, status_track):
 def model_ev(args, scope, status_track):	
     # the convention is that model_ev() run all files in train_path
     # there may be a few number of unevaluated models, and this function evaluate them all
-    
     model_dir = status_track.which_model_to_evaluate()
-    while model_dir is not None:
+    if model_dir is None: return
 
-        MCTList = []
-        for i in range(args.nbatch):
-            # tau is small for testing, and evaluation only solve a problem once.
-            MCTList.append(MCT(args.train_path, i, args.max_clause, args.max_var, 1, tau = lambda x: 0.001)) 
-        nh = args.max_clause
-        nw = args.max_var
-        nc = 2
-        nact = 2 * nw
-        ob_shape = (args.nbatch, nh, nw, nc * args.nstack)
-        X = tf.placeholder(tf.float32, ob_shape)
-        p, v = model2(X, nact, scope)
-        params = find_trainable_variables(scope)
+    nh = args.max_clause
+    nw = args.max_var
+    nc = 2
+    nact = 2 * nw
+    ob_shape = (args.nbatch, nh, nw, nc * args.nstack)
+    X = tf.placeholder(tf.float32, ob_shape)
+    p, v = model2(X, nact, scope)
+    params = find_trainable_variables(scope)
 
-        # within a tensorflow session, run MCT objects with model
-        with tf.Session() as sess:
-            sess.run(tf.global_variables_initializer())
-            assert (args.save_dir is not None) and (model_dir is not None), "no model to evaluate!"
+    # within a tensorflow session, run MCT objects with model
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+
+        # may run this multiple times because there maybe multiple models to evaluate
+        while model_dir is not None:
             sess.run(load(params, os.path.join(args.save_dir, model_dir)))
             print("loaded model {} at dir {} for evaluation".format(args.save_dir, model_dir))
 
             # accumulate states from MCTList, evaluate them in neural net, call get_state again with pi and v as parameters, stop of all states are None
+            MCTList = []
+            for i in range(args.nbatch):
+                # tau is small for testing, and evaluation only solve a problem once.
+                MCTList.append(MCT(args.train_path, i, args.max_clause, args.max_var, 1, tau = lambda x: 0.001)) 
             pi_matrix = np.zeros((args.nbatch, nact), dtype = np.float32)
             v_array = np.zeros((args.nbatch,), dtype = np.float32)
             needMore = np.ones((args.nbatch,), dtype = np.bool)
@@ -171,18 +172,16 @@ def model_ev(args, scope, status_track):
                 for i in range(args.nbatch):
                     if needMore[i]: 
                         temp = MCTList[i].get_state(pi_matrix[i], v_array[i])  
-                        if temp is None: 
+                        while temp is None:
                             idx, rep, scr = MCTList[i].report_performance()
                             performance[idx] = scr / rep
-                        while temp is None and not all_files_done:
+                            if all_files_done: 
+                                break
                             MCTList[i] = MCT(args.train_path, next_file_index, args.max_clause, args.max_var, 1, tau = lambda x: 0.001)
                             next_file_index += 1
-                            if next_file_index >= args.n_train_files:
+                            if next_file_index >= args.n_train_files: 
                                 all_files_done = True
                             temp = MCTList[i].get_state(pi_matrix[i], v_array[i])
-                            if temp is None:
-                                idx, rep, scr = MCTList[i].report_performance()
-                                performance[idx] = scr / rep
                     if (not needMore[i]) or (temp is None):
                         needMore[i] = False
                         states.append(dummy[i])
@@ -190,9 +189,10 @@ def model_ev(args, scope, status_track):
                         states.append(temp)
                 pi_matrix, v_array = sess.run([p, v], feed_dict = {X: np.asarray(states, dtype = np.float32)})
         
-        # write performance to the status_track
-        print(performance)
-        status_track.write_performance(performance)
+            # write performance to the status_track
+            print(performance)
+            status_track.write_performance(performance)
+            model_dir = status_track.which_model_to_evaluate()
 
 def main():
     import argparse
@@ -240,7 +240,7 @@ def main():
         status_track.start_with(os.path.join(args.save_dir, args.status_file))
     else: # otherwise the initial values in Status object fits with the default values here;
         status_track.init_with(args.best_model, args.n_start, [], 0, os.path.join(args.save_dir, args.status_file)) 
-    return
+    
     # the convention here is that n_files == nbatch for self_play!!! OR we self_play one batch only
     self_play(args, "mcts", status_track)
 

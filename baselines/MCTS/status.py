@@ -17,7 +17,7 @@ class Status(object):
 
 	def self_check(self):
 		if self.best_model == -1: 
-			assert self.length_hist == 0 and len(self.ev_hist) == 0, "when self.best_model is -1, self.length_hist should be 0, and self.ev_hist should be empty"
+			assert len(self.ev_hist) == 0, "when self.best_model is -1, self.ev_hist should be empty"
 		assert self.best_model <= len(self.ev_hist), "self.best_model should be less than or equal to len(self.ev_hist)"
 		assert len(self.ev_hist) <= self.length_hist, "self.ev_hist should have length less than or equal to self.length_hist"
 
@@ -112,7 +112,7 @@ class Status(object):
 				self.best_model = len(self.ev_hist) - 1
 		self.write_to_disc(update_hist = True)
 
-	def better_than(per1, per2):
+	def better_than(self, per1, per2):
 		if (per1 <= per2).sum() >= per1.shape[0] * 0.95 and np.mean(per1) < np.mean(per2) * 0.99:
 			return True
 		if (per1 <= per2).sum() >= per1.shape[0] * 0.65 and np.mean(per1) < np.mean(per2) * 0.95:
@@ -120,3 +120,13 @@ class Status(object):
 		if (per1 <= per2).sum() >= per1.shape[0] * 0.50 and np.mean(per1) < np.mean(per2) * 0.90:
 			return True
 		return False
+
+	def show_itself(self):
+		"""
+			this function print the information in this object
+		"""
+		print("best_model is {}".format(self.best_model))
+		print("n_start is {}".format(self.n_start))
+		print("ev_hist has length {}".format(len(self.ev_hist)))
+		print("length_hist is {}".format(self.length_hist))
+		print("status_file is {}".format(self.status_file))
