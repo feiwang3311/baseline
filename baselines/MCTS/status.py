@@ -130,3 +130,11 @@ class Status(object):
 		print("ev_hist has length {}".format(len(self.ev_hist)))
 		print("length_hist is {}".format(self.length_hist))
 		print("status_file is {}".format(self.status_file))
+
+	def print_all_models_performance(self):
+		"""
+			this function print the performance of all models (all average values in ev_hist)
+		"""
+		for i in range(len(self.ev_hist)):
+			print(np.mean(self.ev_hist[i]), end = ", ")
+		print("\n")
