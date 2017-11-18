@@ -32,7 +32,7 @@ def get_nrepeat_count(action, nact):
             start = i
             base = action[i]
     counts[base] = action.shape[0] - start
-    print(counts)
+#    print(counts)
     return counts
 
 def analyze_Pi_graph_dump(Pi_node, sl_Buffer, standard):
@@ -142,7 +142,10 @@ class MCT(object):
         self.min_step = 10000000
         self.max_step = 0
         self.file_no = file_no
-        self.phase = False # phase False is "initial and normal running" phase, phase True is "pause and return state" phase
+        self.phase = False 
+        # phase False is "initial and normal running" phase, 
+        # phase True is "pause and return state" phase
+        # pahse None is "the problem is finished" phase
 
     def get_state(self, pi_array, v_value):
         """
@@ -152,6 +155,8 @@ class MCT(object):
             Return a state (3d numpy array) if paused for evaluation.
             Return None if this problem is simulated nrepeat times (all required repeat times are finished)
         """
+        if self.phase is None: 
+            return None
         while True:
             if not self.Pi_current.evaluated:
 #                if not self.phase:
@@ -175,6 +180,7 @@ class MCT(object):
                 if self.Pi_current.level < self.min_step: self.min_step = self.Pi_current.level # update score range for this sat prob
                 if self.Pi_current.level > self.max_step: self.max_step = self.Pi_current.level
                 if (self.Pi_current.set_next(self.Pi_current.level * self.Pi_current.nrepeats[next_act]) < 0): # write back the total score from this leaf node
+                    self.phase = None # mark self.phase as None to indicate that the object is finished
                     return None # we are finished
                 self.Pi_current = self.Pi_root
                 self.state = self.env.resetAt(self.file_no)

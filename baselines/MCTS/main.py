@@ -27,7 +27,7 @@ def self_play(args, scope, status_track):
     nw = args.max_var
     nc = 2
     nact = 2 * nw
-    ob_shape = (args.nbatch, nh, nw, nc * args.nstack)
+    ob_shape = (None, nh, nw, nc * args.nstack)
     X = tf.placeholder(tf.float32, ob_shape)
     p, v = model2(X, nact, scope)
     params = find_trainable_variables(scope)
@@ -48,20 +48,20 @@ def self_play(args, scope, status_track):
         pi_matrix = np.zeros((args.nbatch, nact), dtype = np.float32)
         v_array = np.zeros((args.nbatch,), dtype = np.float32)
         needMore = np.ones((args.nbatch,), dtype = np.bool)
-        dummy = []
-        for _ in range(args.nbatch):
-            dummy.append(np.zeros((nh, nw, nc), dtype = np.float32))
-        while np.any(needMore):
+        while True:
             states = []
+            pi_v_index = 0
             for i in range(args.nbatch):
-                if needMore[i]: 
-                    temp = MCTList[i].get_state(pi_matrix[i], v_array[i])
-                if (not needMore[i]) or (temp is None):
-                    needMore[i] = False
-                    states.append(dummy[i])
-                else:
-                    states.append(temp)
-            pi_matrix, v_array = sess.run([p, v], feed_dict = {X: np.asarray(states, dtype = np.float32)}) 
+                if needMore[i]:
+                    temp = MCTList[i].get_state(pi_matrix[pi_v_index], v_array[pi_v_index])
+                    pi_v_index += 1
+                    if temp is None:
+                        needMore[i] = False
+                    else:
+                        state.append(temp)
+            if not np.any(needMore):
+                break
+            pi_matrix, v_array = sess.run([p, v], feed_dict = {X: np.asarray(states, dtype = np.float32)})
 
         print("loop finished and save Pi graph to slBuffer")
         os.makedirs(args.dump_dir, exist_ok = True)
@@ -138,7 +138,7 @@ def model_ev(args, scope, status_track):
     nw = args.max_var
     nc = 2
     nact = 2 * nw
-    ob_shape = (args.nbatch, nh, nw, nc * args.nstack)
+    ob_shape = (None, nh, nw, nc * args.nstack)
     X = tf.placeholder(tf.float32, ob_shape)
     p, v = model2(X, nact, scope)
     params = find_trainable_variables(scope)
@@ -164,29 +164,29 @@ def model_ev(args, scope, status_track):
             assert (next_file_index <= args.n_train_files), "this is a convention"
             all_files_done = next_file_index == args.n_train_files
             performance = np.zeros(args.n_train_files)
-            dummy = []
-            for _ in range(args.nbatch):
-                dummy.append(np.zeros((nh, nw, nc), dtype = np.float32))
-            while np.any(needMore):
+            while True:
                 states = []
+                pi_v_index = 0
                 for i in range(args.nbatch):
-                    if needMore[i]: 
-                        temp = MCTList[i].get_state(pi_matrix[i], v_array[i])  
+                    if needMore[i]:
+                        temp = MCTList[i].get_state(pi_matrix[pi_v_index], v_array[pi_v_index])
+                        pi_v_index += 1
                         while temp is None:
                             idx, rep, scr = MCTList[i].report_performance()
                             performance[idx] = scr / rep
-                            if all_files_done: 
+                            if all_files_done:
                                 break
                             MCTList[i] = MCT(args.train_path, next_file_index, args.max_clause, args.max_var, 1, tau = lambda x: 0.001)
                             next_file_index += 1
-                            if next_file_index >= args.n_train_files: 
+                            if next_file_index >= args.n_train_files:
                                 all_files_done = True
-                            temp = MCTList[i].get_state(pi_matrix[i], v_array[i])
-                    if (not needMore[i]) or (temp is None):
-                        needMore[i] = False
-                        states.append(dummy[i])
-                    else:
-                        states.append(temp)
+                            temp = MCTList[i].get_state(pi_matrix[pi_v_index-1], v_array[pi_v_index-1]) # the pi and v are not used (for new MCT object)
+                        if temp is None:
+                            needMore[i] = False
+                        else:
+                            state.append(temp)
+                if not np.any(needMore): 
+                    break
                 pi_matrix, v_array = sess.run([p, v], feed_dict = {X: np.asarray(states, dtype = np.float32)})
         
             # write performance to the status_track
@@ -242,6 +242,7 @@ def main():
         status_track.init_with(args.best_model, args.n_start, [], 0, os.path.join(args.save_dir, args.status_file)) 
     
     # the convention here is that n_files == nbatch for self_play!!! OR we self_play one batch only
+    status_track.show_itself()
     self_play(args, "mcts", status_track)
 
     super_train(args, "supervised", status_track)
