@@ -135,17 +135,21 @@ class MCT(object):
             tau:         the function that, given the current number of step, return a proper tau value
         """
         self.env = sat(file_path, max_clause = max_clause1, max_var = max_var1) 
-        self.Pi_current = self.Pi_root = Pi_struct(max_var1 * 2, nrepeat, 0, file_no, tau) 
-        # IMPORTANT: all reset call should use the resetAt(file_no) function to make sure that it resets at the same file
-        self.state = self.env.resetAt(file_no) 
-        self.Pi_current.add_state(self.state)
-        self.min_step = 10000000
-        self.max_step = 0
         self.file_no = file_no
-        self.phase = False 
-        # phase False is "initial and normal running" phase, 
-        # phase True is "pause and return state" phase
-        # pahse None is "the problem is finished" phase
+        self.state = self.env.resetAt(file_no) 
+        # IMPORTANT: all reset call should use the resetAt(file_no) function to make sure that it resets at the same file
+        if state is None: # extreme case where the SAT problem is solved by simplification
+            self.Pi_root = None
+            self.phase = None
+        else: # normal case: set up!
+            self.Pi_current = self.Pi_root = Pi_struct(max_var1 * 2, nrepeat, 0, file_no, tau) 
+            self.Pi_current.add_state(self.state)
+            self.min_step = 10000000
+            self.max_step = 0
+            self.phase = False 
+            # phase False is "initial and normal running" phase, 
+            # phase True is "pause and return state" phase
+            # pahse None is "the problem is finished" phase
 
     def get_state(self, pi_array, v_value):
         """
@@ -190,10 +194,13 @@ class MCT(object):
                 self.Pi_current.add_state(self.state)
 
     def write_data_to_buffer(self, sl_Buffer):
+        if self.Pi_root is None: return # there is nothing to write
         standard = (self.min_step, self.Pi_root.score / self.Pi_root.repeat, self.max_step)
         analyze_Pi_graph_dump(self.Pi_root, sl_Buffer, standard)
 
     def report_performance(self):
+        if self.Pi_root is None:
+            return self.file_no, 1, 1
         return self.file_no, self.Pi_root.repeat, self.Pi_root.score
 
 
