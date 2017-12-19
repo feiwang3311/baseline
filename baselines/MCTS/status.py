@@ -77,8 +77,12 @@ class Status(object):
 			this method returns the starting model of the supervised learning
 		"""
 		assert self.length_hist > 0, "at supervised training stage, there should exist at least one model"
-		return "model-" + str(self.length_hist - 1)
-
+		# NOTE: if recent two models are worse, instead of better, use the "best_model" as the starting model for sl 
+		if self.length_hist - 1 <= self.best_model + 2:
+		    return "model-" + str(self.length_hist - 1)
+		else:
+			return "model-" + str(max(self.best_model, 0))
+	
 	def generate_new_model(self):
 		"""
 			this function is used by sl_train (or the initial phase of self_play) to put more models in hard drive
@@ -138,3 +142,15 @@ class Status(object):
 		for i in range(len(self.ev_hist)):
 			print(np.mean(self.ev_hist[i]), end = ", ")
 		print("\n")
+import sys
+if __name__ == '__main__':
+        print("in the main function of status")
+        st = Status()
+        st.start_with(sys.argv[1])
+        st.show_itself()
+        st.print_all_models_performance()
+        if (len(sys.argv) == 5):
+                st.reset_best_model(int(sys.argv[2]))
+                st.reset_n_start(int(sys.argv[3]))
+                st.reset_ev(int(sys.argv[4]))
+                st.show_itself()

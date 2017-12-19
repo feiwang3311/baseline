@@ -29,9 +29,11 @@ def build_model(args, scope):
         lossL2 = tf.add_n([ tf.nn.l2_loss(vv) for vv in params ])
         loss = cross_entropy + value_loss + args.l2_coeff * lossL2
     with tf.name_scope("train"):
-        train_step = tf.train.AdamOptimizer(1e-4).minimize(loss)
+        train_step = tf.train.AdamOptimizer(1e-2).minimize(loss)
+    sess = tf.Session()
+    sess.run(tf.global_variables_initializer())
 
-    return X, Y, Z, p, v, params, train_step
+    return X, Y, Z, p, v, params, train_step, sess
 
 """
     c_act (exploration parameter of MCTS) and num_mcts (the full size of MCTS tree) are determined in minisat.core.Const.h
@@ -43,85 +45,85 @@ def build_model(args, scope):
 """
 def self_play(args, built_model, status_track):
     # take out the parts that self_play needs from the model
-    X, _, _, p, v, params, _ = built_model 
+    X, _, _, p, v, params, _, sess = built_model 
 
 	# within a tensorflow session, run MCT objects with model
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        model_dir = status_track.get_model_dir()
-        if (args.save_dir is not None) and (model_dir is not None):
-            sess.run(load(params, os.path.join(args.save_dir, model_dir)))
-            print("loaded model {} at dir {} for selfplay".format(args.save_dir, model_dir))
-        else:
-            # this is the initial random parameter! let's save it in hard drive!
-            ps = sess.run(params)
-            model_dir = status_track.generate_new_model()
-            save(ps, os.path.join(args.save_dir, model_dir))
-    
-        MCTList = []
-        for i in status_track.get_nbatch_index(args.nbatch, args.n_train_files):
-            MCTList.append(MCT(args.train_path, i, args.max_clause, args.max_var, args.nrepeat, tau = lambda x: 0.9)) # TODO: be smart about tau
-        pi_matrix = np.zeros((args.nbatch, 2 * args.max_var), dtype = np.float32)
-        v_array = np.zeros((args.nbatch,), dtype = np.float32)
-        needMore = np.ones((args.nbatch,), dtype = np.bool)
-        while True:
-            states = []
-            pi_v_index = 0
-            for i in range(args.nbatch):
-                if needMore[i]:
-                    temp = MCTList[i].get_state(pi_matrix[pi_v_index], v_array[pi_v_index])
-                    pi_v_index += 1
-                    if temp is None:
-                        needMore[i] = False
-                    else:
-                        states.append(temp)
-            if not np.any(needMore):
-                break
-            pi_matrix, v_array = sess.run([p, v], feed_dict = {X: np.asarray(states, dtype = np.float32)})
+#    with tf.Session() as sess:
+#        sess.run(tf.global_variables_initializer())
+    model_dir = status_track.get_model_dir()
+    if (args.save_dir is not None) and (model_dir is not None):
+        sess.run(load(params, os.path.join(args.save_dir, model_dir)))
+        print("loaded model {} at dir {} for selfplay".format(args.save_dir, model_dir))
+    else:
+        # this is the initial random parameter! let's save it in hard drive!
+        ps = sess.run(params)
+        model_dir = status_track.generate_new_model()
+        save(ps, os.path.join(args.save_dir, model_dir))
 
-        print("loop finished and save Pi graph to slBuffer")
-        os.makedirs(args.dump_dir, exist_ok = True)
-        dump_trace = os.path.join(args.dump_dir, args.dump_file)
-        if os.path.isfile(dump_trace):
-            with open(dump_trace, 'rb') as sl_file:
-                sl_Buffer = pickle.load(sl_file)
-        else:
-            sl_Buffer = slBuffer(args.sl_buffer_size)     
+    MCTList = []
+    for i in status_track.get_nbatch_index(args.nbatch, args.n_train_files):
+        MCTList.append(MCT(args.train_path, i, args.max_clause, args.max_var, args.nrepeat, tau = lambda x: 0.9)) # TODO: be smart about tau
+    pi_matrix = np.zeros((args.nbatch, 2 * args.max_var), dtype = np.float32)
+    v_array = np.zeros((args.nbatch,), dtype = np.float32)
+    needMore = np.ones((args.nbatch,), dtype = np.bool)
+    while True:
+        states = []
+        pi_v_index = 0
         for i in range(args.nbatch):
-            MCTList[i].write_data_to_buffer(sl_Buffer)
-        with open(dump_trace, 'wb') as sl_file:
-            pickle.dump(sl_Buffer, sl_file, -1)
+            if needMore[i]:
+                temp = MCTList[i].get_state(pi_matrix[pi_v_index], v_array[pi_v_index])
+                pi_v_index += 1
+                if temp is None:
+                    needMore[i] = False
+                else:
+                    states.append(temp)
+        if not np.any(needMore):
+            break
+        pi_matrix, v_array = sess.run([p, v], feed_dict = {X: np.asarray(states, dtype = np.float32)})
+
+    print("loop finished and save Pi graph to slBuffer")
+    os.makedirs(args.dump_dir, exist_ok = True)
+    dump_trace = os.path.join(args.dump_dir, args.dump_file)
+    if os.path.isfile(dump_trace):
+        with open(dump_trace, 'rb') as sl_file:
+            sl_Buffer = pickle.load(sl_file)
+    else:
+        sl_Buffer = slBuffer(args.sl_buffer_size)     
+    for i in range(args.nbatch):
+        MCTList[i].write_data_to_buffer(sl_Buffer)
+    with open(dump_trace, 'wb') as sl_file:
+        pickle.dump(sl_Buffer, sl_file, -1)
 
 """
     this function does supervised training
 """
 def super_train(args, built_model, status_track):
     # take out the parts that self_play needs from the model
-    X, Y, Z, _, _, params, train_step = built_model 
+    X, Y, Z, _, _, params, train_step, sess = built_model 
 
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
+#    with tf.Session() as sess:
+#        sess.run(tf.global_variables_initializer())
         # load the last generated model (I think??)
-        model_dir = status_track.get_sl_starter()
-        assert (args.save_dir is not None) and (model_dir is not None), "save_dir and model_dir needs to be specified for super_training"
-        sess.run(load(params, os.path.join(args.save_dir, model_dir)))
-        print("loaded model {} at dir {} as super_training starter".format(args.save_dir, model_dir))
+    model_dir = status_track.get_sl_starter()
+    assert (args.save_dir is not None) and (model_dir is not None), "save_dir and model_dir needs to be specified for super_training"
+    sess.run(load(params, os.path.join(args.save_dir, model_dir)))
+    print("loaded model {} at dir {} as super_training starter".format(args.save_dir, model_dir))
 
-        # data for supervised training
-        dump_trace = os.path.join(args.dump_dir, args.dump_file)
-        with open(dump_trace, 'rb') as sl_file:
-            sl_Buffer = pickle.load(sl_file)
+    # data for supervised training
+    dump_trace = os.path.join(args.dump_dir, args.dump_file)
+    with open(dump_trace, 'rb') as sl_file:
+        sl_Buffer = pickle.load(sl_file)
 
-        # supervised training cycle
-        for i in range(args.sl_num_steps + 1):
-            batch = sl_Buffer.sample(args.sl_nbatch)
-            feed_dict = { X: batch[0], Y: batch[1], Z: batch[2] }
-            sess.run(train_step, feed_dict)
-            if i > 0 and i % args.sl_ncheckpoint == 0: 
-                new_model_dir = status_track.generate_new_model()
-                print("checkpoint model {}".format(new_model_dir))
-                ps = sess.run(params)
-                save(ps, os.path.join(args.save_dir, new_model_dir))
+    # supervised training cycle
+    for i in range(args.sl_num_steps + 1):
+        batch = sl_Buffer.sample(args.sl_nbatch)
+        feed_dict = { X: batch[0], Y: batch[1], Z: batch[2] }
+        sess.run(train_step, feed_dict)
+        if i > 0 and i % args.sl_ncheckpoint == 0: 
+            new_model_dir = status_track.generate_new_model()
+            print("checkpoint model {}".format(new_model_dir))
+            ps = sess.run(params)
+            save(ps, os.path.join(args.save_dir, new_model_dir))
 
 """
     this function evaluates all unevaluated model, as indicated in the status_track object
@@ -141,55 +143,55 @@ def model_ev(args, built_model, status_track, ev_testing = False):
         sat_num  = args.n_train_files
 
     # take out the parts that self_play needs from the model
-    X, _, _, p, v, params, _ = built_model 
+    X, _, _, p, v, params, _, sess = built_model 
 
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        # may run this multiple times because there maybe multiple models to evaluate
-        while model_dir is not None:
-            sess.run(load(params, os.path.join(args.save_dir, model_dir)))
-            print("loaded model {} at dir {} for evaluation".format(args.save_dir, model_dir))
+#    with tf.Session() as sess:
+#        sess.run(tf.global_variables_initializer())
+    # may run this multiple times because there maybe multiple models to evaluate
+    while model_dir is not None:
+        sess.run(load(params, os.path.join(args.save_dir, model_dir)))
+        print("loaded model {} at dir {} for evaluation".format(args.save_dir, model_dir))
 
-            MCTList = []
+        MCTList = []
+        for i in range(args.nbatch):
+            # tau is small for testing, and evaluation only solve a problem once.
+            MCTList.append(MCT(sat_path, i, args.max_clause, args.max_var, 1, tau = lambda x: 0.001)) 
+        pi_matrix = np.zeros((args.nbatch, 2 * args.max_var), dtype = np.float32)
+        v_array = np.zeros((args.nbatch,), dtype = np.float32)
+        needMore = np.ones((args.nbatch,), dtype = np.bool)
+        next_file_index = args.nbatch
+        assert (next_file_index <= sat_num), "this is a convention"
+        all_files_done = next_file_index == sat_num
+        performance = np.zeros(sat_num)
+        while True:
+            states = []
+            pi_v_index = 0
             for i in range(args.nbatch):
-                # tau is small for testing, and evaluation only solve a problem once.
-                MCTList.append(MCT(sat_path, i, args.max_clause, args.max_var, 1, tau = lambda x: 0.001)) 
-            pi_matrix = np.zeros((args.nbatch, 2 * args.max_var), dtype = np.float32)
-            v_array = np.zeros((args.nbatch,), dtype = np.float32)
-            needMore = np.ones((args.nbatch,), dtype = np.bool)
-            next_file_index = args.nbatch
-            assert (next_file_index <= sat_num), "this is a convention"
-            all_files_done = next_file_index == sat_num
-            performance = np.zeros(sat_num)
-            while True:
-                states = []
-                pi_v_index = 0
-                for i in range(args.nbatch):
-                    if needMore[i]:
-                        temp = MCTList[i].get_state(pi_matrix[pi_v_index], v_array[pi_v_index])
-                        pi_v_index += 1
-                        while temp is None:
-                            idx, rep, scr = MCTList[i].report_performance()
-                            performance[idx] = scr / rep
-                            if all_files_done:
-                                break
-                            MCTList[i] = MCT(sat_path, next_file_index, args.max_clause, args.max_var, 1, tau = lambda x: 0.001)
-                            next_file_index += 1
-                            if next_file_index >= sat_num:
-                                all_files_done = True
-                            temp = MCTList[i].get_state(pi_matrix[pi_v_index-1], v_array[pi_v_index-1]) # the pi and v are not used (for new MCT object)
-                        if temp is None:
-                            needMore[i] = False
-                        else:
-                            states.append(temp)
-                if not np.any(needMore): 
-                    break
-                pi_matrix, v_array = sess.run([p, v], feed_dict = {X: np.asarray(states, dtype = np.float32)})
-        
-            # write performance to the status_track
-            print(performance)
-            status_track.write_performance(performance)
-            model_dir = status_track.which_model_to_evaluate()
+                if needMore[i]:
+                    temp = MCTList[i].get_state(pi_matrix[pi_v_index], v_array[pi_v_index])
+                    pi_v_index += 1
+                    while temp is None:
+                        idx, rep, scr = MCTList[i].report_performance()
+                        performance[idx] = scr / rep
+                        if all_files_done:
+                            break
+                        MCTList[i] = MCT(sat_path, next_file_index, args.max_clause, args.max_var, 1, tau = lambda x: 0.001)
+                        next_file_index += 1
+                        if next_file_index >= sat_num:
+                            all_files_done = True
+                        temp = MCTList[i].get_state(pi_matrix[pi_v_index-1], v_array[pi_v_index-1]) # the pi and v are not used (for new MCT object)
+                    if temp is None:
+                        needMore[i] = False
+                    else:
+                        states.append(temp)
+            if not np.any(needMore): 
+                break
+            pi_matrix, v_array = sess.run([p, v], feed_dict = {X: np.asarray(states, dtype = np.float32)})
+    
+        # write performance to the status_track
+        print(performance)
+        status_track.write_performance(performance)
+        model_dir = status_track.which_model_to_evaluate()
 
 def main():
     import argparse
@@ -231,6 +233,7 @@ def main():
     args = parser.parse_args()
     args.n_train_files = len([f for f in os.listdir(args.train_path) if os.path.isfile(os.path.join(args.train_path, f))]) # total number of training files
     args.n_test_files  = len([f for f in os.listdir(args.test_path)  if os.path.isfile(os.path.join(args.test_path,  f))]) # total number of testing files
+    args.dump_dir = args.save_dir
 
     # start the status_track for these operations
     status_track = Status()
@@ -245,9 +248,9 @@ def main():
     built_model = build_model(args, scope = "mcts")
 
     for i in range(args.n_cycles):
-        #self_play(args, built_model, status_track)
+        self_play(args, built_model, status_track)
         status_track.show_itself()
-        #super_train(args, built_model, status_track)
+        super_train(args, built_model, status_track)
         status_track.show_itself()
         model_ev(args, built_model, status_track)
         status_track.show_itself()

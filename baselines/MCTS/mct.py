@@ -138,7 +138,7 @@ class MCT(object):
         self.file_no = file_no
         self.state = self.env.resetAt(file_no) 
         # IMPORTANT: all reset call should use the resetAt(file_no) function to make sure that it resets at the same file
-        if state is None: # extreme case where the SAT problem is solved by simplification
+        if self.state is None: # extreme case where the SAT problem is solved by simplification
             self.Pi_root = None
             self.phase = None
         else: # normal case: set up!
@@ -202,38 +202,3 @@ class MCT(object):
         if self.Pi_root is None:
             return self.file_no, 1, 1
         return self.file_no, self.Pi_root.repeat, self.Pi_root.score
-
-
-"""
-    # Deprecated
-    def add_Pi(self, Pi, counts):
-        assert counts.sum() == (counts * self.isValid).sum(), "count: " + str(counts) + " is invalid: " + str(self.isValid)
-        self.Pi = np.copy(Pi)
-        # hack: sometimes Pi has non-zero values in invalid actions, which is a problem (possibly bug in simulation process)
-        # Because it happens in-frequently, for now, I try to fix Pi by isValid (pushing non-zero invalid Pi value to other valid positions)
-        # also print something in the standoutput so that I know it happened, and hope to collect more info for debugging
-        self.Pi = fix_invalid(self.Pi, self.isValid, self.file_no)
-
-        action = np.random.choice(range(self.size), self.repeat, p = Pi) # random select actions based on Pi, for nrepeat times
-        self.nrepeats = get_nrepeat_count(action, self.size)
-        # same hack should be implemented for nrepeats. OR at least an assert check here to make sure that all nrepeats non-zero are valid!!
-        assert self.repeat == (self.nrepeats * self.isValid).sum(), "all non-zero nrepeats must be valid"
-        for i in range(self.size):
-            if self.nrepeats[i] > 0.5:
-                self.children[i] = Pi_struct(self.size, self.nrepeats[i], self.level+1, self.file_no, parent = self)
-        self.evaluated = True
-"""
-"""
-# this function is a hack that is no longer needed
-def fix_invalid(Pi, isValid, file_no):
-"""
-"""
-    n = isValid.shape[0]
-    v = isValid.sum()
-    total_valid = (isValid * Pi).sum()
-    if total_valid < 0.999999: # errous state, report info for debugging
-        print("ERROR: total_valid is only {} at file_no {}".format(total_valid, file_no))
-        # fix the state
-        Pi = (Pi + (1.0 - total_valid) / v) * isValid
-    return Pi
-"""
