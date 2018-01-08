@@ -125,7 +125,7 @@ class Pi_struct(object):
         return next
 
 class MCT(object):
-    def __init__(self, file_path, file_no, max_clause1, max_var1, nrepeat, tau):
+    def __init__(self, file_path, file_no, max_clause1, max_var1, nrepeat, tau, resign = 1000000):
         """
             file_path:   the directory to files that are used for training
             file_no:     the file index that this object works on (each MCT only focus on one file problem)
@@ -144,8 +144,9 @@ class MCT(object):
         else: # normal case: set up!
             self.Pi_current = self.Pi_root = Pi_struct(max_var1 * 2, nrepeat, 0, file_no, tau) 
             self.Pi_current.add_state(self.state)
-            self.min_step = 10000000
+            self.min_step = resign
             self.max_step = 0
+            self.resign = resign # if the number of steps is larger than resign, treat as lost and done
             self.phase = False 
             # phase False is "initial and normal running" phase, 
             # phase True is "pause and return state" phase
@@ -179,8 +180,8 @@ class MCT(object):
             next_act = self.Pi_current.get_next() 
             assert next_act >= 0, "next_act is neg in file " + str(self.file_no)
             isDone, self.state = self.env.step(next_act) # there is a guarantee that this next_act is valid
-            if isDone:
-#                print("step {} to DONE+++++++++++++++++++++++++++++++++++++++++++++++++++++".format(next_act))
+            if isDone or self.Pi_current.level >= self.resign:
+#                print("step {} to DONE or resign +++++++++++++++++++++++++++++++++++++++++++++++++++++".format(next_act))
                 if self.Pi_current.level < self.min_step: self.min_step = self.Pi_current.level # update score range for this sat prob
                 if self.Pi_current.level > self.max_step: self.max_step = self.Pi_current.level
                 if (self.Pi_current.set_next(self.Pi_current.level * self.Pi_current.nrepeats[next_act]) < 0): # write back the total score from this leaf node

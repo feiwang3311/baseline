@@ -53,6 +53,30 @@ def model2(X, nact, scope, reuse = False, layer_norm = False):
     return pi_fil, vf[:, 0]
 
 """
+    this model function takes the same input as model2, but there is some simplification
+"""
+def model3(X, nact, scope, reuse = False, layer_norm = False):
+    with tf.variable_scope(scope, reuse = reuse):
+        h = conv(tf.cast(X, tf.float32), 'c1', nf = 32, rf = 8, stride = 1, init_scale = np.sqrt(2))
+        h2 = conv(h, 'c2', nf = 64, rf = 4, stride = 1, init_scale = np.sqrt(2))
+        h3 = conv(h2, 'c3', nf = 64, rf = 3, stride = 1, init_scale = np.sqrt(2))
+        # for pi
+        h_pi = conv(h3, 'c_pi', nf = 2, rf = 1, stride = 1, init_scale = np.sqrt(2))
+        h_pi_flat = conv_to_fc(h_pi)
+        pi = fc(h_pi_flat, 'pi', nact, act = lambda x: x)
+        # for v
+        h_v = conv(h3, 'c_v1', nf = 1, rf = 1, stride = 1, init_scale = np.sqrt(2))
+        h_v_flat = conv_to_fc(h_v)
+        h_v_flat256 = fc(h_v_flat, 'c_v2', 256, init_scale = np.sqrt(2))
+        vf = fc(h_v_flat256, 'v', 1, act = lambda x : tf.tanh(x))
+
+        # filter out non-valid actions from pi
+        valid = tf.reduce_max(tf.cast(X, tf.float32), axis = 1)
+        valid_flat = tf.reshape(valid, [-1, nact])
+        pi_fil = pi + (valid_flat - tf.ones(tf.shape(valid_flat))) * 1e32
+    return pi_fil, vf[:, 0]
+
+"""
     load function returns a list of tensorflow actions, that needs to be ran in a session
 """
 def load(params, load_path):

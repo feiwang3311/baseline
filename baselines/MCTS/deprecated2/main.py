@@ -34,12 +34,11 @@ def build_model(args, scope):
     return X, Y, Z, p, v, params, train_step
 
 """
-    c_act (exploration parameter of MCTS) and num_mcts (the full size of MCTS tree) are determined in minisat.core.Const.h
+    c_act (exploration parameter of MCTS) and num_mcts (the full size of MCTS tree) are determined in minisat.core.Const.*
     NOTE: max_clause, max_var and nc are define in both here (in args for model) and in minisat.core.Const.h (for writing states). 
     They need to BE the same.
-    nbatch is the degree of parallel            (defautl 32)
+    nbatch is the degree of parallel            (default 32)
     nstack is the number of history for a state (default 1)
-    IMPORTANT: the convention here is that n_files == nbatch for self_play, i.e. selfplay run nbatch files at a time
 """
 def self_play(args, built_model, status_track):
     # take out the parts that self_play needs from the model

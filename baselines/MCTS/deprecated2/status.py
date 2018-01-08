@@ -14,57 +14,6 @@ class Status(object):
 		self.length_hist = 0     # the length of models generated (or to evaluate)
 		# NOTE: if length_hist is larger than len(ev_hist), it means some number of models have not been evaluated
 		self.status_file = None  # the file name of this object
-		self.args = None         # the arguments list about this status file
-
-	def retrete(self):
-		"""
-			this function decrease length_hist and ev_hist to the best model
-		"""
-		self.length_hist = self.best_model + 1
-		del self.ev_hist[self.length_hist :]
-		self.write_to_disc(update_hist = True)
-
-	def reset_ev(self, resetTo):
-		"""
-			this function reset ev_hist to resetTo
-		"""
-		self.ev_hist = self.ev_hist[:resetTo]
-		self.write_to_disc(update_hist = True)
-
-	def reset_n_start(self, n_start):
-		"""
-			this function reset n_start value
-		"""
-		self.n_start = n_start
-		self.write_to_disc()
-
-	def reset_best_model(self, best_model):
-		"""
-			this function reset best_model
-		"""
-		self.best_model = best_model		
-		self.write_to_disc()
-
-	def reset_length_hist(self, length_hist):
-		"""
-			this function reset length_hist (only used if the model is not saved completely)
-		"""
-		self.length_hist = length_hist
-		self.write_to_disc()
-
-	def reset_args(self, args):
-		"""
-			this function reset the args field
-		"""
-		self.args = args
-		self.write_to_disc()
-
-	def set_same_length_hist(self, other):
-		""" 
-			this function set the same length_hist has the "other"
-		"""
-		self.length_hist = other.length_hist
-		self.write_to_disc() 
 
 	def self_check(self):
 		if self.best_model == -1: 
@@ -78,7 +27,7 @@ class Status(object):
 			TODO : optimize so that the vast content of ev_hist is not unnecessarily updated
 		"""
 		with open(self.status_file, "wb") as f:
-			pickle.dump((self.best_model, self.n_start, self.length_hist, self.status_file, self.args), f)
+			pickle.dump((self.best_model, self.n_start, self.length_hist, self.status_file), f)
 		if update_hist:
 			with open(self.status_file + ".hist", "wb") as d:
 				pickle.dump(self.ev_hist, d)
@@ -88,12 +37,12 @@ class Status(object):
 			this method fill the fields of Status object with information stored in a status pickle dump
 		"""
 		with open(status_file, "rb") as f:
-			self.best_model, self.n_start, self.length_hist, self.status_file, self.args = pickle.load(f)
+			self.best_model, self.n_start, self.length_hist, self.status_file = pickle.load(f)
 		with open(status_file + ".hist", "rb") as d:
 			self.ev_hist = pickle.load(d)
 		self.self_check()
 	
-	def init_with(self, best_model, n_start, ev_hist, length_hist, status_file, args = None):
+	def init_with(self, best_model, n_start, ev_hist, length_hist, status_file):
 		"""
 			this method initialize the fields of Status object with given parameters 
 		"""
@@ -102,7 +51,6 @@ class Status(object):
 		self.ev_hist = ev_hist
 		self.length_hist = length_hist
 		self.status_file = status_file
-		self.args = args
 		self.self_check()
 		self.write_to_disc(update_hist = True)
 
@@ -131,7 +79,7 @@ class Status(object):
 		assert self.length_hist > 0, "at supervised training stage, there should exist at least one model"
 		# NOTE: if recent two models are worse, instead of better, use the "best_model" as the starting model for sl 
 		if self.length_hist - 1 <= self.best_model + 2:
-			return "model-" + str(self.length_hist - 1)
+		    return "model-" + str(self.length_hist - 1)
 		else:
 			return "model-" + str(max(self.best_model, 0))
 	
@@ -141,9 +89,6 @@ class Status(object):
 			it returns the new model dir name for this new model
 		"""
 		self.length_hist += 1
-		if self.best_model == -1:
-			assert self.length_hist == 1, "this should be the first model"
-			self.best_model = 0
 		self.write_to_disc()
 		return "model-" + str(self.length_hist - 1)
 
@@ -189,8 +134,6 @@ class Status(object):
 		print("ev_hist has length {}".format(len(self.ev_hist)))
 		print("length_hist is {}".format(self.length_hist))
 		print("status_file is {}".format(self.status_file))
-		if self.args is not None:
-			print("args is {}__{}__{}".format(self.args.save_dir, self.args.train_path, self.args.test_path))
 
 	def print_all_models_performance(self):
 		"""
@@ -199,7 +142,7 @@ class Status(object):
 		for i in range(len(self.ev_hist)):
 			print(np.mean(self.ev_hist[i]), end = ", ")
 		print("\n")
-
+		
 import sys
 if __name__ == '__main__':
         print("in the main function of status")
@@ -211,10 +154,4 @@ if __name__ == '__main__':
                 st.reset_best_model(int(sys.argv[2]))
                 st.reset_n_start(int(sys.argv[3]))
                 st.reset_ev(int(sys.argv[4]))
-                st.show_itself()
-        if (len(sys.argv) == 6):
-                st.reset_best_model(int(sys.argv[2]))
-                st.reset_n_start(int(sys.argv[3]))
-                st.reset_ev(int(sys.argv[4]))
-                st.reset_length_hist(int(sys.argv[5]))
                 st.show_itself()
