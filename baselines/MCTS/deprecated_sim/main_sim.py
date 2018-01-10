@@ -103,7 +103,6 @@ def super_train(args, built_model, status_track):
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
-        # load the last generated model (I think??)
         model_dir = status_track.get_sl_starter()
         assert (args.save_dir is not None) and (model_dir is not None), "save_dir and model_dir needs to be specified for super_training"
         sess.run(load(params, os.path.join(args.save_dir, model_dir)))
@@ -154,7 +153,7 @@ def model_ev(args, built_model, status_track, ev_testing = False):
             MCTList = []
             for i in range(args.nbatch):
                 # tau is small for testing, and evaluation only solve a problem once.
-                MCTList.append(MCT(sat_path, i, args.max_clause, args.max_var, 1, sl_Buffer = None, tau = lambda x: 0.001, resign = 400))
+                MCTList.append(MCT(sat_path, i, args.max_clause, args.max_var, 1, sl_buffer = None, tau = lambda x: 0.001, resign = 400))
             pi_matrix = np.zeros((args.nbatch, 2 * args.max_var), dtype = np.float32)
             v_array = np.zeros((args.nbatch,), dtype = np.float32)
             needMore = np.ones((args.nbatch,), dtype = np.bool)

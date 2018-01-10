@@ -9,7 +9,9 @@ def softmax(x):
 
 def get_PI(counts, tau):
     p = 1 / tau
-    if p < 500:
+    if p == 1.0:
+        Pi = counts / np.sum(counts)
+    elif p < 500:
         counts = counts / counts.sum()
         # do it in small steps to prevent underflow
         while p >= 10:
@@ -55,9 +57,9 @@ class Pi_struct(object):
         assert (self.isValid * self.Pi).sum() > 0.999999, "Pi: " + str(self.Pi) + \
         " is invalid: " + str(self.isValid) + " in file " + str(self.file_no)
         # random select action based on Pi
-        action = np.random.choice(range(len(self.Pi)), 1, p = self.Pi)
+        action = np.random.choice(len(self.Pi), 1, p = self.Pi)
 
-        return action
+        return action[0]
 
 class Pi_structs(object):
     """
@@ -72,7 +74,6 @@ class Pi_structs(object):
         self.tau = tau
         self.level = 0    # the current step in the self play, also the index into self.Pis
         self.Pis = []     # the list containing all the Pi_structs
-        self.action = -1  # the action of choice for the next step
         self.condition = "level points to a fresh spot"
 
     def add_state(self, state):	
@@ -83,10 +84,10 @@ class Pi_structs(object):
 
     def add_counts(self, counts):
         assert self.condition == "level points to spot with state", "Error: condition should be with state"
-        self.action = self.Pis[self.level].add_counts(counts, self.tau(self.level))
+        action = self.Pis[self.level].add_counts(counts, self.tau(self.level))
         self.level += 1
         self.condition = "level points to a fresh spot"
-        return self.action
+        return action
 
     def dump_in_buffer(self, sl_Buffer):
         assert self.condition == "level points to a fresh spot", "Error: condition should be fresh"
@@ -98,13 +99,13 @@ class MCT(object):
     def __init__(self, file_path, file_no, max_clause1, max_var1, nrepeat, sl_buffer, tau, resign = 1000000):
         """
             file_path:   the directory to files that are used for training
-            file_no:     the file index that this object works on (each MCT only focus on one file problem)
+            file_no:     the file index that this object works on (each MCT only focus on one SAT problem)
             max_clause1: the max_clause that should be passed to the env object
             max_var1:    the max_var that should be passed to the env object
-            nrepeat:     the number of repeats that we want to self_play with this file problem (suggest 100)
-            tau:         the function that, given the current number of step, return a proper tau value
-            resign:      the steps to declare loss without comparing with others
-            sl_buffer:      the reference to the supervised learning storage buffer
+            nrepeat:     the number of repeats that we want to self_play with this SAT problem
+            sl_buffer:   the reference to the supervised learning storage buffer
+            tau:         the function that, given the current number of steps, return a proper tau value
+            resign:      the steps to pre-terminate as if done (usually too many steps)
         """
         self.env = sat(file_path, max_clause = max_clause1, max_var = max_var1)
         self.file_no = file_no
@@ -122,15 +123,15 @@ class MCT(object):
             self.pi_structs.add_state(self.state)
             self.phase = False
             # phase False is "initial and normal running, should return state to neural nets"
-            # phase True is "pause and return state, should use results from neural nets for env simulation"
-            # phase None is "done and finished, should just return None"
+            # phase True  is "pause and return state, should use results from neural nets for env simulation"
+            # phase None  is "done and finished, should just return None"
         self.performance_list = []
 
     def get_state(self, pi_array, v_value):
         """
             main logic function:
             pi_array: the pi array evaluated by neural net (when phase is False, this paramete is not used)
-            v_value:  the v value evaluated by neural net  (when phase is False, this paramete is not used)
+            v_value:  the v  value evaluated by neural net (when phase is False, this paramete is not used)
             Return a state (3d numpy array) if paused for evaluation.
             Return None if this problem is simulated nrepeat times (all required repeat times are finished)
         """ 
@@ -156,15 +157,15 @@ class MCT(object):
                 self.pi_structs.dump_in_buffer(self.buffer)       # save self play in buffer
             self.performance_list.append(self.pi_structs.level)   # save n_steps in the performance list
             self.working_repeat += 1                              # check how many repeats has been performed
-            if self.working_repeat >= self.nrepeats:                  # if enough, set None and return None
+            if self.working_repeat >= self.nrepeats:                  # if enough, set None and return None (mark finished)
                 self.phase = None
                 return None
-            self.pi_structs = Pi_structs(self.file_no, self.tau)  # reset pi_struct
+            self.pi_structs = Pi_structs(self.file_no, self.tau)  # reset pi_structs
             self.state = self.env.resetAt(self.file_no)           # reset env and state
-            self.pi_structs.add_state(self.state)                 # reset pi_struct with initial state
-        else:
-            self.pi_struct.add_state(self.state)
-
+        # add to pi_structs the new state (could be after reset, could be normal step-foward)
+        self.pi_structs.add_state(self.state)
+        # route back to the start of the function
+        return self.get_state(pi_array, v_value)
 
     def report_performance(self):
         if len(self.performance_list) == 0:

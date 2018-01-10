@@ -92,7 +92,7 @@ class slBuffer_allFile(object):
         self.bufferList = []
         for i in range(n_files): 
             self.bufferList.append(slBuffer_oneFile(self.eachSize, i))
-        self.sample_round = 0
+        self.sample_round = -1
         self.sample_list = np.zeros(self.n_files, dtype = np.bool)
 
     def add(self, fromWhichFile, obs, Pi, step):
@@ -101,7 +101,20 @@ class slBuffer_allFile(object):
 
     def sample(self, batch_size):
         assert np.any(self.sample_list), "Error: sample from an empty sl buffer"
+        self.sample_round += 1
+        self.sample_round %= self.n_files
         while not self.sample_list[self.sample_round]:
         	self.sample_round += 1
         	self.sample_round %= self.n_files
-        self.bufferList[self.sample_round].sample(batch_size)	
+        return self.bufferList[self.sample_round].sample(batch_size)
+
+import sys, pickle
+if __name__ == '__main__':
+    filename = sys.argv[1]
+    with open(filename, "rb") as f:
+        buffer1 = pickle.load(f)
+    X, Y, Z = buffer1.sample(6)
+    for i in range(6):
+        print(np.sum(X[i]))
+        print(Y[i])
+        print(Z[i])
