@@ -82,7 +82,7 @@ class Pi_struct(object):
         """
             this function MAYBE initialize a child at the "next_action" branch and return that child
         """
-        if self.children[next_action] is None:
+        if next_action not in self.children: 
             self.children[next_action] = Pi_struct(self.size, self.level + 1, self.file_no, self.tau, parent = self)
         return self.children[next_action]
 
@@ -166,6 +166,8 @@ class MCT(object):
 
     def write_data_to_buffer(self, sl_Buffer):
         if self.Pi_root is None: return # there is nothing to write
+        sl_Buffer.add_from_Pi_structs(self.Pi_root)
+        return 
         # sub-routine to save in buffer
         def analyze_Pi_graph_dump(Pi_node, sl_Buffer):
             for act in Pi_node.children:

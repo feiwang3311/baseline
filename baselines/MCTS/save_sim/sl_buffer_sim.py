@@ -17,45 +17,66 @@ class slBuffer_oneFile(object):
         self._maxsize = size
         self.fileNo = fileNo
 
-        # actual store of data and repeats
-        self._storage = []
-        self._next_idx = 0 # the next index to add samples (for override old samples)
-        self._nrepeat = []
-        self.sum_nrepeat = 0 # this number tracks the sum of _nrepeat (needs update when samples are added or removed)
+        self._storage = [] # actual store of data 
+        self._next_idx = 0 # index to write to
         
-        # this is the probability distribution of _nrepeat 
-        self._prob = None # (it is None at initialization and when new samples are added)
-        # this helps calculate the actual score for each state/Pi pair
-        self.mean_step = 0 # (needs to be updated when samples are added or removed). 
+        # this needs to be updated when data is added or removed. It helps calculate the actual score for each state/Pi pair
+        self.mean_step = 0
+        self.n_play = 0
+        # VERY IMPORTANT:: mean_step should be averaged by plays, not by steps.
+        # it means that if I have two plays, the first play toke 4 steps and the second play took 8 steps.
+        # the mean_step should be 6.
+        # However I will have 4 additions to the buffer that says steps-4 
+        #                 and 8 additions to the buffer that says steps-8
+        # If I mistakenly did average by steps, I will get mean_step = (4 * 4 + 8 * 8) / (4 + 8) = 6.667
+        # which bias the mean_step to a larger value
+
+        # However it seems hard to keep accurate value of mean_step by play, because when storage is full, 
+        # data are taken out by step not by play!! TRICKY: SOLVE LATER. For now, let's just assume that no data are removed
 
     def __len__(self):
         return len(self._storage)
 
-    def add(self, obs, Pi, step, repeat):
-        self._prob = None
-        # obs is already 2d sparse array 
+    def add(self, obs, Pi, step):
+        assert False, "deprecated function"
         data = (obs, Pi, step)
 
         if self._next_idx >= len(self._storage): # adding new data at new space!
+            current_count = len(self._storage)
             self._storage.append(data)
-            self._nrepeat.append(repeat)
-            old_sum_nrepeat = self.sum_nrepeat # save old sum_nrepeat
-            self.sum_nrepeat += repeat
-            self.mean_step *= (old_sum_nrepeat / self.sum_nrepeat)
-            self.mean_step += (step * repeat   / self.sum_nrepeat)
-            
+            self.mean_step *= current_count * 1.0 / (current_count + 1)
+            self.mean_step += step * 1.0 / (current_count + 1)
         else: # adding new data at old space, while removing an old data!
             _, _, old_step = self._storage[self._next_idx]
-            old_repeat = self._nrepeat[self._next_idx]
             self._storage[self._next_idx] = data
-            self._nrepeat[self._next_idx] = repeat
-            old_sum_nrepeat = self.sum_nrepeat
-            self.sum_nrepeat = self.sum_nrepeat + repeat - old_repeat
-            self.mean_step *= (old_sum_nrepeat / self.sum_nrepeat)
-            self.mean_step += ((step * repeat - old_step * old_repeat) / self.sum_nrepeat)
+            self.mean_step += (step - old_step) * 1.0 / self._maxsize
 
         self._next_idx = (self._next_idx + 1) % self._maxsize
 
+    def add_a_play(self, list_of_Pi_node, level):
+        """
+            this function add a play of state/Pi/steps. 
+            assume that the input is a list of Pi_nodes for one play.
+        """
+        # update self.n_play and self.mean_step
+        self.n_play += 1
+        self.mean_step *= ((self.n_play - 1) / self.n_play)
+        self.mean_step += level / self.n_play
+        # put data in storage
+        for node in list_of_Pi_node:
+            self.add_uncheck(node.state, node.Pi, level)
+
+    def add_uncheck(self, obs, Pi, step):
+        """
+            this function add state without updating the self.mean_step
+        """
+        data = (obs, Pi, step)
+        if self._next_idx >= len(self._storage): # adding new data at new space!
+            self._storage.append(data)
+        else: # adding new data at old space, while removing an old data!
+            self._storage[self._next_idx] = data
+        self._next_idx = (self._next_idx + 1) % self._maxsize
+        
     def _get_score(self, step):
     	return np.tanh((self.mean_step - step) * 3.0 / self.mean_step)
 
@@ -92,9 +113,7 @@ class slBuffer_oneFile(object):
         score_batch: np.array
             rewards received as results of executing act_batch
         """
-        if self._prob is None:
-        	self._prob = np.array(self._nrepeat) / sum(self._nrepeat)
-        idxes = np.random.choice(len(self._storage), batch_size, p = self._prob)
+        idxes = np.random.choice(len(self._storage), batch_size)
         return self._encode_sample(idxes)
 
 class slBuffer_allFile(object):
@@ -111,11 +130,12 @@ class slBuffer_allFile(object):
         self.bufferList = []
         for i in range(n_files): 
             self.bufferList.append(slBuffer_oneFile(self.eachSize, i))
-        self.sample_round = -1 # this is the round-robin index for sample from the list of slBuffer_oneFile
+        self.sample_round = -1
         self.sample_list = np.zeros(self.n_files, dtype = np.bool)
 
-    def add(self, fromWhichFile, obs, Pi, step, repeat):
-        self.bufferList[fromWhichFile].add(obs, Pi, step, repeat)
+    def add(self, fromWhichFile, obs, Pi, step):
+        assert False, "deprecated function"
+        self.bufferList[fromWhichFile].add(obs, Pi, step)
         self.sample_list[fromWhichFile] = True
 
     def sample(self, batch_size):
@@ -123,9 +143,16 @@ class slBuffer_allFile(object):
         self.sample_round += 1
         self.sample_round %= self.n_files
         while not self.sample_list[self.sample_round]:
-            self.sample_round += 1
-            self.sample_round %= self.n_files
+        	self.sample_round += 1
+        	self.sample_round %= self.n_files
         return self.bufferList[self.sample_round].sample(batch_size)
+
+    def add_a_play(self, fromWhichFile, list_of_Pi_node, level):
+        """
+            this function calls add_a_play of one of the bufferList
+        """
+        self.bufferList[fromWhichFile].add_a_play(list_of_Pi_node, level)
+        self.sample_list[fromWhichFile] = True
 
 import sys, pickle
 if __name__ == '__main__':

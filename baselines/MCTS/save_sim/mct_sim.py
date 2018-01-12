@@ -91,8 +91,7 @@ class Pi_structs(object):
 
     def dump_in_buffer(self, sl_Buffer):
         assert self.condition == "level points to a fresh spot", "Error: condition should be fresh"
-        for pi in self.Pis:
-            sl_Buffer.add(self.file_no, pi.state, pi.Pi, self.level)
+        sl_Buffer.add_a_play(self.file_no, self.Pis, self.level)
         self.condition = "finish self play and saved to buffer"
 
 class MCT(object):

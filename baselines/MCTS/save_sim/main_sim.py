@@ -218,7 +218,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('--save_dir', type = str, help='where is the model saved', default="GPO2/Small1")
+    parser.add_argument('--save_dir', type = str, help='where is the model saved', default="GPO2/Small1_fixMeanStep1")
     parser.add_argument('--best_model', type = int, help="the index of the best model (-1 for unknown)", default = -1)
     parser.add_argument('--status_file', type = str, help="which file keeps a record of the status", default = "status.pkl")
     parser.add_argument('--result_file', type = str, help="this file keeps the performance of models on testing files", default = "result.pkl")

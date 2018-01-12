@@ -2,7 +2,6 @@ import os, time, pickle
 import numpy as np
 import scipy.sparse as sp
 from minisat.minisat.gym.GymSolver import sat
-from sl_buffer import slBuffer
 
 def softmax(x):
     e_x = np.exp(x - np.max(x))
@@ -32,19 +31,20 @@ def get_nrepeat_count(action, nact):
             start = i
             base = action[i]
     counts[base] = action.shape[0] - start
-#    print(counts)
     return counts
 
-def analyze_Pi_graph_dump(Pi_node, sl_Buffer, standard):
+def analyze_Pi_graph_dump(file_no, Pi_node, sl_Buffer, standard):
     if not Pi_node.evaluated: return # this is the finished node (no state, not evaluated)
     for act in Pi_node.children:
-        analyze_Pi_graph_dump(Pi_node.children[act], sl_Buffer, standard)
+        analyze_Pi_graph_dump(file_no, Pi_node.children[act], sl_Buffer, standard)
     # save this node's infor TODO: should the score be more quatified?
     av = Pi_node.score / Pi_node.repeat 
-    if av > standard[1]: score = - (av-standard[1]) / (standard[2]-standard[1])
-    elif av < standard[1]: score = (standard[1]-av) / (standard[1]-standard[0])
-    else: score = 0
-    sl_Buffer.add(Pi_node.state, Pi_node.Pi, score, Pi_node.repeat)
+    # for mct2.py, change the score calculation to tanh
+    score = np.tanh((standard[1] - av) * 3.0 / standard[1])
+    # if av > standard[1]: score = - (av-standard[1]) / (standard[2]-standard[1])
+    # elif av < standard[1]: score = (standard[1]-av) / (standard[1]-standard[0])
+    # else: score = 0
+    sl_Buffer.add(file_no, Pi_node.state, Pi_node.Pi, score, Pi_node.repeat)
 
 class Pi_struct(object):
     """
@@ -164,8 +164,6 @@ class MCT(object):
             return None
         while True:
             if not self.Pi_current.evaluated:
-#                if not self.phase:
-#                    print("simulation -----------------------------------------------{} at level {}".format(self.Pi_current.repeat, self.Pi_current.level))
                 needEnv = True
                 while needEnv or needSim:
                     if needEnv:
@@ -181,7 +179,6 @@ class MCT(object):
             assert next_act >= 0, "next_act is neg in file " + str(self.file_no)
             isDone, self.state = self.env.step(next_act) # there is a guarantee that this next_act is valid
             if isDone or self.Pi_current.level >= self.resign:
-#                print("step {} to DONE or resign +++++++++++++++++++++++++++++++++++++++++++++++++++++".format(next_act))
                 if self.Pi_current.level < self.min_step: self.min_step = self.Pi_current.level # update score range for this sat prob
                 if self.Pi_current.level > self.max_step: self.max_step = self.Pi_current.level
                 if (self.Pi_current.set_next(self.Pi_current.level * self.Pi_current.nrepeats[next_act]) < 0): # write back the total score from this leaf node
@@ -190,14 +187,13 @@ class MCT(object):
                 self.Pi_current = self.Pi_root
                 self.state = self.env.resetAt(self.file_no)
             else:
-#                print("step {} is continuing***********************************************".format(next_act))
                 self.Pi_current = self.Pi_current.children[next_act]
                 self.Pi_current.add_state(self.state)
 
     def write_data_to_buffer(self, sl_Buffer):
         if self.Pi_root is None: return # there is nothing to write
         standard = (self.min_step, self.Pi_root.score / self.Pi_root.repeat, self.max_step)
-        analyze_Pi_graph_dump(self.Pi_root, sl_Buffer, standard)
+        analyze_Pi_graph_dump(self.file_no, self.Pi_root, sl_Buffer, standard)
 
     def report_performance(self):
         if self.Pi_root is None:

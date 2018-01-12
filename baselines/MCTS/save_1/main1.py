@@ -4,8 +4,8 @@ import tensorflow as tf
 from utils import discount_with_dones, Scheduler, make_path, find_trainable_variables
 from models import model, model2, model3, load, save
 import scipy.sparse as sp
-from sl_buffer_d import slBuffer_allFile
-from mct_d import MCT
+from sl_buffer1 import slBuffer_allFile
+from mct1 import MCT
 from status import Status
 
 """
@@ -221,7 +221,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('--save_dir', type = str, help='where is the model saved', default="GPO2/Small5")
+    parser.add_argument('--save_dir', type = str, help='where is the model saved', default="GPO2/Small6_step1")
     parser.add_argument('--best_model', type = int, help="the index of the best model (-1 for unknown)", default = -1)
     parser.add_argument('--status_file', type = str, help="which file keeps a record of the status", default = "status.pkl")
     parser.add_argument('--result_file', type = str, help="this file keeps the performance of models on testing files", default = "result.pkl")
