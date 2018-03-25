@@ -5,7 +5,7 @@ from baselines.common import set_global_seeds
 from baselines import bench
 from baselines.acktr.acktr_disc import learn
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
-from baselines.common.atari_wrappers import wrap_deepmind
+#from baselines.common.atari_wrappers import wrap_deepmind
 from baselines.acktr.policies import CnnPolicy
 
 def train(env_id, num_frames, seed, num_cpu, save_dir, test_path, model_dir, save_interval):

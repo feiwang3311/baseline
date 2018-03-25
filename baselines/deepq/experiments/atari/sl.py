@@ -55,6 +55,7 @@ def parse_args():
     parser.add_argument("--prioritized-beta0", type=float, default=0.4, help="initial value of beta parameters for prioritized replay")
     parser.add_argument("--prioritized-eps", type=float, default=1e-6, help="eps parameter for prioritized replay buffer")
     parser.add_argument("--L2_coeff", type=float, default=0.0, help="coefficiency for L2 regularization")
+    parser.add_argument("--keep_prob", type=float, default=1.0, help="the probability of dropout")
     # Checkpointing
     parser.add_argument("--save-dir", type=str, default=None, help="directory in which training model should be saved.")
     parser.add_argument("--save-azure-container", type=str, default=None,
@@ -358,7 +359,7 @@ def super_train(filename, num_steps, nbatch, num_report, layer_norm, num_procs, 
 	
 	# Comments by Fei: maybe in supervised learning, we should train q_func, not f_act. i.e. we should train without filtering
 	kwargs = {}
-	q_values = model(observations_ph, num_actions, scope="deepq/q_func", layer_norm=layer_norm, **kwargs) 
+	q_values = model(observations_ph, num_actions, scope="deepq/q_func", layer_norm=layer_norm, keep_prob = args.keep_prob, **kwargs) 
 	q_func_vars = U.scope_vars("deepq/q_func")
 	print("found trainable vars of {} many".format(len(q_func_vars)))
 	# Train and evaluate
@@ -390,7 +391,7 @@ def super_train(filename, num_steps, nbatch, num_report, layer_norm, num_procs, 
 		#	maybe_load_model(save_dir, load_model_num)
 
 		# supervised training cycle
-		for i in range(num_steps):
+		for i in range(num_steps + 1):
 			batch = data.next_batch(nbatch, permute = permute) # training data will be permuted after using one round of them!
 			feed_dict={observations_ph: batch[0], y_: batch[1]}
 			sess.run(train_step, feed_dict)

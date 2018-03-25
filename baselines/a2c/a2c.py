@@ -38,6 +38,7 @@ class Model(object):
 
         step_model = policy(sess, ob_space, ac_space, nenvs, 1, nstack, reuse=False)
         train_model = policy(sess, ob_space, ac_space, nenvs, nsteps, nstack, reuse=True) # there is only one set of neural network, because reuse=True
+        test_model = policy(sess, ob_space, ac_space, 1, 1, nstack, reuse=True) # Comments by Fei: used for testing (same set of parameters)
 
         neglogpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model.pi, labels=A) # Comments by Fei: pi is nbatch * nact
         pg_loss = tf.reduce_mean(ADV * neglogpac)
@@ -126,6 +127,8 @@ class Model(object):
         self.train = train
         self.train_model = train_model
         self.step_model = step_model
+        # Comments by Fei: give a handle to the test model
+        self.test_model = test_model
         self.step = step_model.step
         self.value = step_model.value
         self.initial_state = step_model.initial_state
@@ -219,6 +222,57 @@ class Runner(object):
             sum_rewards = sum_rewards + np.asarray(rewards) * mask
             if not mask.any(): break
         return np.mean(sum_rewards)
+
+    """
+        this function test a directory (test_path) and returns the the performance (added by Fei)
+    """
+    def test(self, environments, test_path):
+        from gym.envs.SatSolver import gym_sat_Env, gym_sat_sort_Env, gym_sat_permute_Env, gym_sat_graph_Env, gym_sat_graph2_Env
+        env_type = environments
+        if env_type == "gym_sat_Env-v0": 
+            env = gym_sat_Env(test_path = test_path)
+        elif env_type == "gym_sat_Env-v1": 
+            env = gym_sat_sort_Env(test_path = test_path)
+        elif env_type == "gym_sat_Env-v2": 
+            env = gym_sat_permute_Env(test_path = test_path)
+        elif env_type == "gym_sat_Env-v3":
+            env = gym_sat_graph_Env(test_path = test_path)
+        elif env_type == "gym_sat_Env-v4":
+            env = gym_sat_graph2_Env(test_path = test_path)
+        else: 
+            print("ERROR: env is not one of the pre-defined mode")
+            return
+
+        test_file_num = env.test_file_num
+        print("there are {} files to test".format(test_file_num))
+    
+        # testing main cycle
+        score = 0.0
+        reward = 0
+        for i in range(test_file_num):
+            obs = env.reset() # this reset is in test mode (because we passed test_path at the construction of env)
+                              # so the reset will iterate all test files in test_path, instead of randomly picking a file
+            while True:
+                action, _, _ = self.model.test_model.step(np.array(obs)[None])
+                obs, rew, done, info = env.step(action)
+                reward += 1
+                if done:
+                    score = (score * i + reward) / (i+1)
+                    reward = 0
+                    break
+        print("the average performance is {}".format(score))
+
+def test(policy, env, save_dir, model_name, test_path, environment):
+    tf.reset_default_graph()
+    nenvs = env.num_envs
+    ob_space = env.observation_space
+    ac_space = env.action_space
+    model = Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nenvs=nenvs, nsteps=20, nstack=1, num_procs=16)
+    runner = Runner(env, model, nsteps=20, nstack=1)
+    # load the model to test, and test it
+    model.load(osp.join(save_dir, model_name))
+    runner.test(environment, test_path)
+
 
 # Change for SAT, nstack changed to 1 (was 4), nsteps changed to 20, was 5, total_timesteps was 80e6
 def learn(policy, env, seed, nsteps=20, nstack=1, total_timesteps=int(1e6), vf_coef=0.5, ent_coef=0.01, max_grad_norm=0.5, lr=7e-4, lrschedule='linear', epsilon=1e-5, alpha=0.99, gamma=0.99, log_interval=100):

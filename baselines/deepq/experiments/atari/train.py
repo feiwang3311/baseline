@@ -23,12 +23,7 @@ from baselines.common.misc_util import (
     SimpleMonitor
 )
 from baselines.common.schedules import LinearSchedule, PiecewiseSchedule
-# when updating this to non-deperecated ones, it is important to
-# copy over LazyFrames
-# from baselines.common.atari_wrappers_deprecated import wrap_dqn
-# from baselines.common.azure_utils import Container
 from baselines.deepq.experiments.atari.model import model, dueling_model
-
 
 def parse_args():
     parser = argparse.ArgumentParser("DQN experiments for Atari games")
@@ -395,23 +390,3 @@ if __name__ == '__main__':
 
             if info["steps"] > args.num_steps:
                 break
-
-#            if done:
-#                steps_left = args.num_steps - info["steps"]
-#                completion = np.round(info["steps"] / args.num_steps, 1)
-#
-#                logger.record_tabular("% completion", completion)
-#                logger.record_tabular("steps", info["steps"])
-#                logger.record_tabular("iters", num_iters)
-#                logger.record_tabular("episodes", len(info["rewards"]))
-#                logger.record_tabular("reward (100 epi mean)", np.mean(info["rewards"][-100:]))
-#                logger.record_tabular("exploration", exploration.value(num_iters))
-#                if args.prioritized:
-#                    logger.record_tabular("max priority", replay_buffer._max_priority)
-#                fps_estimate = (float(steps_per_iter) / (float(iteration_time_est) + 1e-6)
-#                                if steps_per_iter._value is not None else "calculating...")
-#                logger.dump_tabular()
-#                logger.log()
-#                logger.log("ETA: " + pretty_eta(int(steps_left / fps_estimate)))
-#                logger.log()
-

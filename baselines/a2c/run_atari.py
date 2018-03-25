@@ -3,12 +3,12 @@ import os, logging, gym
 from baselines import logger
 from baselines.common import set_global_seeds
 from baselines import bench
-from baselines.a2c.a2c import learn
+from baselines.a2c.a2c import learn, test
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from baselines.common.atari_wrappers import wrap_deepmind
 from baselines.a2c.policies import CnnPolicy, LstmPolicy, LnLstmPolicy, DnnPolicy
 
-def train(env_id, num_frames, seed, policy, lrschedule, num_cpu):
+def train(env_id, num_frames, seed, policy, lrschedule, num_cpu, save_dir=None, test_path=None, model_dir=None):
     num_timesteps = int(num_frames * 1.1) # Change for SAT: no need to divide by 4
     # divide by 4 due to frameskip, then do a little extras so episodes end
     def make_env(rank):
@@ -30,7 +30,10 @@ def train(env_id, num_frames, seed, policy, lrschedule, num_cpu):
         policy_fn = LnLstmPolicy
     elif policy == 'dnn':
         policy_fn = DnnPolicy
-    learn(policy_fn, env, seed, total_timesteps=num_timesteps, lrschedule=lrschedule)
+    if test_path is not None:
+        test(policy_fn, env, save_dir, model_dir, test_path, env_id)
+    else:
+        learn(policy_fn, env, seed, total_timesteps=num_timesteps, lrschedule=lrschedule)
     env.close()
 
 def main():
@@ -42,9 +45,14 @@ def main():
     parser.add_argument('--lrschedule', help='Learning rate schedule', choices=['constant', 'linear'], default='linear')
     parser.add_argument('--million_frames', help='How many frames to train (/ 1e6). '
         'This number gets divided by 4 due to frameskip', type=int, default=1) # Change for SAT: use 1, was 40
+    # Comments by Fei: arguments for testing mode
+    parser.add_argument('--save-dir', help='where is the model saved', default=None)
+    parser.add_argument('--test_path', help='where is test files saved', default=None)
+    parser.add_argument('--model-dir', help='which model to test on', default=None)
     args = parser.parse_args()
     train(args.env, num_frames=1e6 * args.million_frames, seed=args.seed, 
-        policy=args.policy, lrschedule=args.lrschedule, num_cpu=16) 
+        policy=args.policy, lrschedule=args.lrschedule, num_cpu=16, 
+        save_dir = args.save_dir, test_path = args.test_path, model_dir = args.model_dir) 
 
 if __name__ == '__main__':
     main()

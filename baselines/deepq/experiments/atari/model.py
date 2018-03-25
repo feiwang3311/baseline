@@ -33,6 +33,7 @@ def model(img_in, num_actions, scope, reuse=False, layer_norm=False, keep_prob=1
             else:
                 value_out = tf.nn.relu(value_out)
             # Comments by Fei: add dropout here
+            print("keep_prob is {}".format(keep_prob))
             value_out = tf.nn.dropout(value_out, keep_prob)
             value_out = layers.fully_connected(value_out, num_outputs=num_actions, activation_fn=None)
         return value_out
